@@ -18,6 +18,7 @@ export class FlightScene {
   private gSky = new Graphics();
   private gBodies = new Graphics();
   private vesselsLayer = new Container();
+  private gTraj = new Graphics();
   private gProj = new Graphics();
   private gParticles = new Graphics();
   private gAim = new Graphics();
@@ -54,7 +55,7 @@ export class FlightScene {
   constructor(app: Application, onExit: () => void) {
     this.app = app;
     this.onExit = onExit;
-    this.layer.addChild(this.gSky, this.gBodies, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gMap);
+    this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gMap);
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
@@ -306,12 +307,14 @@ export class FlightScene {
       this.gProj.clear();
       this.gParticles.clear();
       this.gAim.clear();
+      this.gTraj.clear();
       this.hideAllSprites();
       return;
     }
     this.gMap.clear();
     this.drawSky();
     this.drawBodies();
+    this.drawTrajectory(this.gTraj, 0.4);
     this.drawVessels();
     this.drawProjectiles();
     this.gParticles.clear();
@@ -445,6 +448,39 @@ export class FlightScene {
     }
   }
 
+  // Draw the predicted Keplerian path of the player relative to the dominant body.
+  private drawTrajectory(g: Graphics, alpha: number, clear = true) {
+    if (clear) g.clear();
+    if (!this.player) return;
+    const body = this.world.dominantBody(this.player.pos);
+    const path = conicPath(this.player.pos, this.player.vel, body);
+    if (!path) return;
+
+    // draw as segments, skipping any part below the surface
+    let drawing = false;
+    for (let i = 0; i < path.pts.length; i++) {
+      const p = path.pts[i];
+      const above = V.len(V.sub(p, body.pos)) >= body.radius * 0.999;
+      const s = this.cam.worldToScreen(p);
+      if (above) {
+        if (!drawing) { g.moveTo(s.x, s.y); drawing = true; }
+        else g.lineTo(s.x, s.y);
+      } else {
+        drawing = false;
+      }
+    }
+    g.stroke({ color: 0x9ec7e0, width: 2, alpha });
+
+    const mark = (pt: Vec2 | null, color: number) => {
+      if (!pt) return;
+      const s = this.cam.worldToScreen(pt);
+      g.circle(s.x, s.y, 4);
+      g.fill({ color, alpha: Math.min(1, alpha + 0.5) });
+    };
+    mark(path.apo, 0x7fb6e0); // apoapsis
+    mark(path.peri, 0xd98a3d); // periapsis
+  }
+
   private drawAim() {
     const g = this.gAim;
     g.clear();
@@ -508,6 +544,8 @@ export class FlightScene {
       g.poly(circlePoints(s.x, s.y, r));
       g.fill({ color: b.color });
     }
+    // predicted trajectory (drawn into the same map graphics)
+    this.drawTrajectory(g, 0.85, false);
     // player marker
     if (this.player) {
       const s = this.cam.worldToScreen(this.player.pos);
@@ -646,6 +684,47 @@ function orbit(pos: Vec2, vel: Vec2, body: Body): Orbit {
   }
   const peri = (h * h) / GM / (1 + ecc);
   return { apo: Infinity, peri, ecc, bound: false };
+}
+
+// Sample the Keplerian conic (relative to `body`) into world-space points, plus
+// apoapsis/periapsis markers. Returns null for degenerate/near-radial orbits.
+function conicPath(pos: Vec2, vel: Vec2, body: Body): { pts: Vec2[]; apo: Vec2 | null; peri: Vec2 | null } | null {
+  const r = V.sub(pos, body.pos);
+  const v = V.sub(vel, body.vel);
+  const rl = V.len(r) || 1;
+  const GM = body.GM;
+  const h = r.x * v.y - r.y * v.x;
+  if (Math.abs(h) < 1) return null; // radial / degenerate
+  const energy = V.len2(v) / 2 - GM / rl;
+  const p = (h * h) / GM; // semi-latus rectum
+  // eccentricity vector
+  const rv = r.x * v.x + r.y * v.y;
+  const c = V.len2(v) - GM / rl;
+  const ex = (c * r.x - rv * v.x) / GM;
+  const ey = (c * r.y - rv * v.y) / GM;
+  const ecc = Math.hypot(ex, ey);
+  const omega = Math.atan2(ey, ex); // argument of periapsis
+  const point = (theta: number): Vec2 => {
+    const rr = p / (1 + ecc * Math.cos(theta));
+    return { x: body.pos.x + rr * Math.cos(omega + theta), y: body.pos.y + rr * Math.sin(omega + theta) };
+  };
+
+  const pts: Vec2[] = [];
+  const N = 160;
+  if (energy < 0 && ecc < 1) {
+    for (let i = 0; i <= N; i++) pts.push(point((i / N) * Math.PI * 2));
+    const peri = point(0);
+    const apo = point(Math.PI);
+    return { pts, apo: V.len(V.sub(apo, body.pos)) < body.soi ? apo : null, peri };
+  }
+  // hyperbola/parabola: sweep the true-anomaly range that stays within the SOI
+  const thetaMax = ecc > 1 ? Math.acos(Math.max(-0.999, -1 / ecc)) - 0.01 : Math.PI / 2;
+  for (let i = -N; i <= N; i++) {
+    const th = (i / N) * thetaMax;
+    const pt = point(th);
+    if (V.len(V.sub(pt, body.pos)) <= body.soi) pts.push(pt);
+  }
+  return { pts, apo: null, peri: point(0) };
 }
 
 function mkPanel(): HTMLDivElement {
