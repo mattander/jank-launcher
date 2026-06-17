@@ -322,11 +322,14 @@ export class FlightScene {
       const s = this.cam.worldToScreen(b.pos);
       const r = b.radius * this.cam.zoom;
       if (r < 0.5) continue;
+      // Use fixed-segment polygons, NOT g.circle(): Pixi tessellates a circle
+      // with more segments the larger the radius, and a planet's on-screen radius
+      // can be millions of px — rebuilding that every frame drops us to <1 fps.
       if (b.atmoHeight > 0) {
-        g.circle(s.x, s.y, (b.radius + b.atmoHeight) * this.cam.zoom);
+        g.poly(circlePoints(s.x, s.y, (b.radius + b.atmoHeight) * this.cam.zoom));
         g.fill({ color: b.atmoColor, alpha: 0.25 });
       }
-      g.circle(s.x, s.y, r);
+      g.poly(circlePoints(s.x, s.y, r));
       g.fill({ color: b.color });
       g.stroke({ color: 0x2a2118, width: 2, alpha: 0.5 });
     }
@@ -414,11 +417,11 @@ export class FlightScene {
       if (b.parent) {
         const p = this.world.get(b.parent);
         const ps = this.cam.worldToScreen(p.pos);
-        g.circle(ps.x, ps.y, b.orbitR * this.cam.zoom);
+        g.poly(circlePoints(ps.x, ps.y, b.orbitR * this.cam.zoom, 96));
         g.stroke({ color: 0x445, width: 1, alpha: 0.7 });
       }
       const r = Math.max(3, b.radius * this.cam.zoom);
-      g.circle(s.x, s.y, r);
+      g.poly(circlePoints(s.x, s.y, r));
       g.fill({ color: b.color });
     }
     // player marker
@@ -520,6 +523,17 @@ function fmt(m: number): string {
   if (a >= 1e6) return (m / 1e6).toFixed(2) + " Mm";
   if (a >= 1000) return (m / 1000).toFixed(2) + " km";
   return m.toFixed(0) + " m";
+}
+
+// Fixed-segment circle as a flat point array. Bounded cost regardless of radius
+// (a planet filling the screen needs only a few segments to look round).
+function circlePoints(cx: number, cy: number, r: number, segs = 64): number[] {
+  const pts: number[] = [];
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2;
+    pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  return pts;
 }
 
 function lerpColor(a: number, b: number, t: number): number {
