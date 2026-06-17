@@ -15,8 +15,10 @@ interface Particle {
 
 export class Particles implements Fx {
   parts: Particle[] = [];
+  onBoom?: (size: number) => void; // optional audio hook
 
   explosion(pos: Vec2, size: number) {
+    this.onBoom?.(size);
     const n = Math.round(10 + size * 10);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;

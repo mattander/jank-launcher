@@ -36,9 +36,12 @@ Then open the local URL Vite prints.
 | `W` / `S` | Throttle up / down |
 | `Shift` / `Ctrl` | Full / cut throttle |
 | `Space` | Stage (drop a decoupler / pop chutes) |
-| `F` | Fire weapons |
+| `Mouse` / `Click` / `F` | Aim / fire weapons |
+| `Tab` | Cycle weapon group (cannon / laser / missile) |
 | `R` | RCS toggle |
 | `M` | Toggle map view |
+| `,` / `.` | Time warp down / up |
+| `N` | Mute / unmute sound |
 | `Mouse wheel` | Zoom |
 | `Esc` | Back to the hangar |
 

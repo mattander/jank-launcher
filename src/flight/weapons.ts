@@ -74,13 +74,8 @@ export class Combat {
     }
   }
 
-  // Fire one weapon. `origin` world pos, `dir` unit aim direction.
+  // Fire a ballistic weapon. `origin` world pos, `dir` unit aim direction.
   fire(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerVel: Vec2, ownerId: number, fx: Fx) {
-    if (spec.kind === "laser") {
-      // resolved against the world in update() so it can damage what it touches
-      this._pendingLaser.push({ origin, dir, spec, ownerId });
-      return;
-    }
     if (spec.kind === "cannon") {
       this.projectiles.push({
         pos: { ...origin },
@@ -107,21 +102,19 @@ export class Combat {
     }
   }
 
-  private _pendingLaser: { origin: Vec2; dir: Vec2; spec: WeaponSpec; ownerId: number }[] = [];
+  // Continuous laser: instant ray, drawn and applied immediately so the beam is
+  // in sync with rendering. Called once per frame per laser while firing.
+  fireLaser(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerId: number, fx: Fx, world: World, vessels: Vessel[]) {
+    const hit = this.rayHit(origin, dir, spec.range, world, vessels, ownerId);
+    const end = hit ? hit.point : V.add(origin, V.scale(dir, spec.range));
+    this.beams.push({ a: { ...origin }, b: end, life: 0.06, hit: !!hit });
+    if (hit) {
+      this.applyDamage(hit, spec.damage * 0.05, fx);
+      if (Math.random() < 0.5) fx.explosion(hit.point, 0.4);
+    }
+  }
 
   update(dt: number, world: World, vessels: Vessel[], fx: Fx) {
-    // resolve lasers (instant ray), then draw a beam to the contact point
-    for (const l of this._pendingLaser) {
-      const hit = this.rayHit(l.origin, l.dir, l.spec.range, world, vessels, l.ownerId);
-      const end = hit ? hit.point : V.add(l.origin, V.scale(l.dir, l.spec.range));
-      this.beams.push({ a: l.origin, b: end, life: 0.1, hit: !!hit });
-      if (hit) {
-        this.applyDamage(hit, l.spec.damage * dt * 12, fx);
-        fx.explosion(hit.point, 0.5);
-      }
-    }
-    this._pendingLaser = [];
-
     // beams fade
     for (const b of this.beams) b.life -= dt;
     this.beams = this.beams.filter((b) => b.life > 0);

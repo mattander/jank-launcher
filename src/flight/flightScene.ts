@@ -8,6 +8,7 @@ import { Vessel, assembleVessel, VesselInput } from "./vessel";
 import { Combat } from "./weapons";
 import { Particles } from "./fx";
 import { sketchCircle } from "../sketch";
+import { GameAudio } from "../audio";
 
 const WEAPON_KINDS: WeaponSpec["kind"][] = ["cannon", "laser", "missile"];
 
@@ -26,6 +27,7 @@ export class FlightScene {
   world = new World();
   combat = new Combat();
   fx = new Particles();
+  audio = new GameAudio();
   vessels: Vessel[] = [];
   player: Vessel | null = null;
   onExit: () => void;
@@ -65,6 +67,7 @@ export class FlightScene {
     this.partSprites.clear();
     this.combat = new Combat();
     this.fx = new Particles();
+    this.fx.onBoom = (size) => this.audio.explosion(size);
     this.milestones.clear();
     this.world = new World();
     this.clock = 0;
@@ -102,6 +105,8 @@ export class FlightScene {
     this.setDomVisible(false);
     this.keys.clear();
     this.firing = false;
+    this.audio.setThrust(0);
+    this.audio.setLaser(false);
   }
 
   resize() {
@@ -118,6 +123,7 @@ export class FlightScene {
       this.aimScreen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     });
     c.addEventListener("pointerdown", (e) => {
+      this.audio.resume();
       if (e.button === 0 && this.layer.visible && !this.mapMode) this.firing = true;
     });
     window.addEventListener("pointerup", () => (this.firing = false));
@@ -131,14 +137,16 @@ export class FlightScene {
 
   private onKey(e: KeyboardEvent, down: boolean) {
     if (!this.layer.visible) return;
+    this.audio.resume();
     const k = e.key.toLowerCase();
     if (down) {
       if (k === "escape") return this.onExit();
-      if (k === " ") { this.stageEdge = true; e.preventDefault(); }
+      if (k === " ") { this.stageEdge = true; this.audio.stage(); e.preventDefault(); }
       if (k === "f") this.firing = true;
       if (k === "tab") { this.cycleWeapon(); e.preventDefault(); }
       if (k === "r") this.rcs = !this.rcs;
       if (k === "m") this.toggleMap();
+      if (k === "n") this.toast(this.audio.toggleMute() ? "🔇 Muted" : "🔊 Sound on");
       if (k === ",") this.warp = Math.max(1, this.warp / 2);
       if (k === ".") this.warp = Math.min(64, this.warp * 2);
     } else {
@@ -210,6 +218,15 @@ export class FlightScene {
     // weapons firing (mouse/F), respects per-part cooldown
     if (this.firing && !this.mapMode) this.fireWeapons();
 
+    // continuous audio: engine rumble + laser tone
+    const kinds = this.availableWeaponKinds();
+    const activeKind = kinds.length ? kinds[this.weaponGroup % kinds.length] : null;
+    let thrustLevel = this.player.liquidFuel > 0 ? this.throttle : 0;
+    if (this.player.srbsLit && this.player.aliveParts().some((p) => p.def.solid && p.fuel > 0))
+      thrustLevel = Math.max(thrustLevel, 0.8);
+    this.audio.setThrust(thrustLevel);
+    this.audio.setLaser(this.firing && !this.mapMode && activeKind === "laser");
+
     // cull dead/empty vessels (keep player even if sad)
     this.vessels = this.vessels.filter((v) => v === this.player || v.aliveParts().length > 0);
     if (this.player.aliveParts().length === 0) {
@@ -235,12 +252,21 @@ export class FlightScene {
     for (const p of this.player.aliveParts()) {
       const spec = p.def.weapon;
       if (!spec || spec.kind !== kind) continue;
-      const last = this.fireCooldown.get(p.uid) ?? -999;
-      if (this.clock - last < 1 / spec.rate) continue;
-      this.fireCooldown.set(p.uid, this.clock);
+      // lasers are continuous beams; ballistic weapons respect their fire rate
+      if (spec.kind !== "laser") {
+        const last = this.fireCooldown.get(p.uid) ?? -999;
+        if (this.clock - last < 1 / spec.rate) continue;
+        this.fireCooldown.set(p.uid, this.clock);
+      }
       const origin = this.player.partWorld(p);
       const dir = V.norm(V.sub(aim, origin));
-      this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx);
+      if (spec.kind === "laser") {
+        this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels);
+      } else {
+        this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx);
+        if (spec.kind === "cannon") this.audio.cannon();
+        else this.audio.missile();
+      }
     }
   }
 
@@ -389,10 +415,20 @@ export class FlightScene {
     g.clear();
     for (const pr of this.combat.projectiles) {
       const s = this.cam.worldToScreen(pr.pos);
-      const tail = this.cam.worldToScreen(V.sub(pr.pos, V.scale(V.norm(pr.vel), pr.kind === "missile" ? 12 : 6)));
+      // tracer drawn from velocity relative to the planet so it points the way
+      // the shot actually travels on screen (not along the orbital velocity)
+      const body = this.world.dominantBody(pr.pos);
+      const vRel = V.sub(pr.vel, body.vel);
+      const dir = V.norm(vRel);
+      const tailLen = pr.kind === "missile" ? 22 : 16;
+      const head = pr.kind === "missile" ? 4 : 3;
+      const tail = { x: s.x - dir.x * tailLen, y: s.y - dir.y * tailLen };
       g.moveTo(tail.x, tail.y);
       g.lineTo(s.x, s.y);
-      g.stroke({ color: pr.kind === "missile" ? 0xff8a3d : 0xffd27f, width: 3, cap: "round" });
+      g.stroke({ color: pr.kind === "missile" ? 0xff8a3d : 0xffd27f, width: head, cap: "round" });
+      // bright head so it's always visible regardless of speed/orientation
+      g.circle(s.x, s.y, head);
+      g.fill({ color: pr.kind === "missile" ? 0xffd27f : 0xfff2c8 });
     }
     for (const b of this.combat.beams) {
       const a = this.cam.worldToScreen(b.a);
@@ -450,7 +486,7 @@ export class FlightScene {
     this.helpEl.innerHTML =
       "<b>A/D</b> rotate · <b>W/S</b> throttle<br><b>Shift/Ctrl</b> full/cut<br>" +
       "<b>Space</b> stage · <b>R</b> RCS<br><b>Mouse</b> aim · <b>Click/F</b> fire<br>" +
-      "<b>Tab</b> weapon · <b>M</b> map<br><b>,/.</b> warp · <b>Esc</b> hangar";
+      "<b>Tab</b> weapon · <b>M</b> map<br><b>,/.</b> warp · <b>N</b> mute · <b>Esc</b> hangar";
     document.body.appendChild(this.helpEl);
 
     this.toastEl = document.createElement("div");
