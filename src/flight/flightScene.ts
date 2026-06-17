@@ -45,6 +45,7 @@ export class FlightScene {
   private warp = 1;
   private fireCooldown = new Map<string, number>();
   private clock = 0;
+  private shake = 0;
   private milestones = new Set<string>();
   private lastBodyId = "terra";
 
@@ -69,7 +70,10 @@ export class FlightScene {
     this.partSprites.clear();
     this.combat = new Combat();
     this.fx = new Particles();
-    this.fx.onBoom = (size) => this.audio.explosion(size);
+    this.fx.onBoom = (size) => {
+      this.audio.explosion(size);
+      this.shake = Math.min(16, this.shake + size * 3);
+    };
     this.milestones.clear();
     this.world = new World();
     this.clock = 0;
@@ -239,6 +243,7 @@ export class FlightScene {
     // speed (~8.8 km/s), so smoothing on absolute position can't keep up and the
     // craft flies off-screen; track it exactly instead.
     if (!this.mapMode) this.cam.center = { ...this.player.pos };
+    this.shake *= Math.exp(-frameDt * 7); // decay screen shake
 
     this.checkMilestones();
     this.render();
@@ -266,8 +271,9 @@ export class FlightScene {
         this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels, aim);
       } else {
         this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx, aim, this.world);
-        if (spec.kind === "cannon") this.audio.cannon();
-        else this.audio.missile();
+        this.fx.flash(origin, dir, spec.kind === "cannon" ? 0xffd27f : 0xff8a3d);
+        if (spec.kind === "cannon") { this.audio.cannon(); this.shake = Math.min(16, this.shake + 1.4); }
+        else { this.audio.missile(); this.shake = Math.min(16, this.shake + 2.2); }
       }
     }
   }
@@ -309,7 +315,14 @@ export class FlightScene {
       this.gAim.clear();
       this.gTraj.clear();
       this.hideAllSprites();
+      this.layer.position.set(0, 0);
       return;
+    }
+    // screen shake offset (world layers only; HUD is DOM and stays put)
+    if (this.shake > 0.1) {
+      this.layer.position.set((Math.random() - 0.5) * this.shake * 2, (Math.random() - 0.5) * this.shake * 2);
+    } else {
+      this.layer.position.set(0, 0);
     }
     this.gMap.clear();
     this.drawSky();
@@ -512,10 +525,15 @@ export class FlightScene {
     }
     g.stroke({ color, width: 2, alpha: 0.5 });
 
-    // reticle at the cursor
-    const r = 13;
+    // reticle at the cursor (pulses while firing)
+    const firing = this.firing;
+    const r = firing ? 16 + Math.sin(this.clock * 30) * 1.5 : 13;
+    if (firing) {
+      g.poly(circlePoints(to.x, to.y, r + 4, 20));
+      g.stroke({ color, width: 2, alpha: 0.35 });
+    }
     g.poly(circlePoints(to.x, to.y, r, 20));
-    g.stroke({ color, width: 2, alpha: 0.9 });
+    g.stroke({ color, width: firing ? 3 : 2, alpha: 0.95 });
     const tick = 6;
     for (const [tx, ty] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       g.moveTo(to.x + tx * (r - tick), to.y + ty * (r - tick));

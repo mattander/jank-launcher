@@ -45,6 +45,23 @@ export class Particles implements Fx {
     });
   }
 
+  // bright muzzle flash: a short cone of sparks along `dir`
+  flash(pos: Vec2, dir: Vec2, color: number) {
+    for (let i = 0; i < 7; i++) {
+      const spread = (Math.random() - 0.5) * 0.7;
+      const d = V.rot(dir, spread);
+      this.parts.push({
+        pos: { ...pos },
+        vel: V.scale(d, 120 + Math.random() * 160),
+        life: 0.12 + Math.random() * 0.12,
+        maxLife: 0.24,
+        size: 4 + Math.random() * 5,
+        color: Math.random() < 0.4 ? 0xfff2c8 : color,
+        ring: false,
+      });
+    }
+  }
+
   puff(pos: Vec2, vel: Vec2, color: number) {
     this.parts.push({
       pos: { ...pos },
