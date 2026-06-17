@@ -144,6 +144,7 @@ export class Vessel {
   // -------- per-step simulation --------
   // Returns any debris vessels spun off this step.
   update(dt: number, world: World, input: VesselInput | null, fx: Fx): Vessel[] {
+    if (this.aliveParts().length === 0) return []; // nothing left: freeze
     const body = world.dominantBody(this.pos);
 
     // throttle easing
@@ -186,15 +187,16 @@ export class Vessel {
     const grav = world.gravityAt(this.pos, body);
     let accel = V.add(grav, V.scale(up, thrust / this.mass));
 
-    // ---- aero drag (light) ----
+    // ---- aero drag (light) ---- relative to the body's atmosphere, not the sun
     const rho = world.airDensity(this.pos, body);
     if (rho > 0) {
-      const speed = V.len(this.vel);
+      const vRelAir = V.sub(this.vel, body.vel);
+      const speed = V.len(vRelAir);
       if (speed > 0.1) {
         const area = this.dragArea();
         const dragK = 0.0009;
         const fDrag = dragK * rho * speed * speed * area;
-        accel = V.add(accel, V.scale(V.norm(this.vel), -fDrag / this.mass));
+        accel = V.add(accel, V.scale(V.norm(vRelAir), -fDrag / this.mass));
       }
     }
 
@@ -224,14 +226,15 @@ export class Vessel {
     this.recompute();
     this.recenter();
 
-    // ---- parachutes (drag toward zero in atmosphere) ----
+    // ---- parachutes (drag toward the body's frame in atmosphere) ----
     if (rho > 0.02) {
       let chuteArea = 0;
       for (const p of this.parts) if (p.alive && p.deployed && p.def.parachute) chuteArea += p.def.parachute;
       if (chuteArea > 0) {
-        const speed = V.len(this.vel);
+        const vRelAir = V.sub(this.vel, body.vel);
+        const speed = V.len(vRelAir);
         const slow = Math.min(1, dt * 0.6 * rho * chuteArea * 0.02);
-        this.vel = V.scale(this.vel, 1 - slow);
+        this.vel = V.add(body.vel, V.scale(vRelAir, 1 - slow));
         if (speed > 1) this.angVel *= 1 - Math.min(1, dt * 2); // chutes stabilize
       }
     }
@@ -451,7 +454,9 @@ export class Vessel {
     }
 
     const normal = V.norm(V.sub(this.pos, body.pos)); // outward
-    const radialSpeed = -(this.vel.x * normal.x + this.vel.y * normal.y); // closing speed
+    // Work in the body's frame so a landed craft co-moves with its planet.
+    const vRel = V.sub(this.vel, body.vel);
+    const radialSpeed = -(vRel.x * normal.x + vRel.y * normal.y); // closing speed
     const hasLegs = this.parts.some((p) => p.alive && p.def.landingLeg && p.deployed);
     const chutesOut = this.parts.some((p) => p.alive && p.def.parachute && p.deployed);
     const gentle = radialSpeed < (hasLegs ? 12 : 6) || chutesOut;
@@ -459,11 +464,18 @@ export class Vessel {
     // push out of the ground
     this.pos = V.add(this.pos, V.scale(normal, deepest.pen));
 
+    // Moving outward (lifting off / bouncing up): never damp — let it fly.
+    if (radialSpeed <= 0.05) {
+      this.landed = false;
+      return [];
+    }
+
     if (gentle && radialSpeed < 20) {
-      // settle: kill radial velocity, damp tangential & spin
-      const vn = this.vel.x * normal.x + this.vel.y * normal.y;
-      this.vel = V.sub(this.vel, V.scale(normal, vn));
-      this.vel = V.scale(this.vel, 0.6);
+      // settle: kill inward radial velocity, damp tangential & spin (body frame)
+      const vn = vRel.x * normal.x + vRel.y * normal.y;
+      let v = V.sub(vRel, V.scale(normal, vn));
+      v = V.scale(v, 0.6);
+      this.vel = V.add(body.vel, v);
       this.angVel *= 0.5;
       this.landed = true;
       return [];
@@ -471,9 +483,10 @@ export class Vessel {
 
     // hard hit: bounce a bit, damage, and break joints (jank!)
     this.landed = false;
-    const vn = this.vel.x * normal.x + this.vel.y * normal.y;
-    this.vel = V.sub(this.vel, V.scale(normal, vn * 1.3));
-    this.vel = V.scale(this.vel, 0.4);
+    const vn = vRel.x * normal.x + vRel.y * normal.y;
+    let v = V.sub(vRel, V.scale(normal, vn * 1.3));
+    v = V.scale(v, 0.4);
+    this.vel = V.add(body.vel, v);
     const impactAccel = radialSpeed * 220; // large effective accel for the frame
     fx.explosion(this.partWorld(deepest.p), Math.min(3, 0.6 + radialSpeed * 0.04));
     deepest.p.hp -= radialSpeed * 4;

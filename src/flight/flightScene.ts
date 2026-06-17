@@ -55,6 +55,7 @@ export class FlightScene {
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
+    if (import.meta.env.DEV) (window as unknown as { __flight: FlightScene }).__flight = this;
   }
 
   // ---------------- lifecycle ----------------
