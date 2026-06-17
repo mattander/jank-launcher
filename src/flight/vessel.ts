@@ -509,6 +509,31 @@ export class Vessel {
   aliveParts(): PartInstance[] {
     return this.parts.filter((p) => p.alive);
   }
+
+  // What the next Space press will do (mirrors doStage), for the HUD.
+  nextStageLabel(): string | null {
+    let target: PartInstance | null = null;
+    for (const p of this.parts) {
+      if (!p.alive || !p.def.decoupler || p.deployed) continue;
+      if (!target || p.ly < target.ly) target = p;
+    }
+    if (target) {
+      const root = this.commandUid();
+      const dropped = new Set<string>();
+      if (root) {
+        for (const n of this.adj.get(target.uid) ?? []) {
+          const comp = this.componentFrom(root, new Set([edgeKey(target.uid, n)]));
+          if (!comp.has(n)) for (const x of this.componentFrom(n, new Set([edgeKey(target.uid, n)]))) dropped.add(x);
+        }
+      }
+      const names = [...new Set([...dropped].map((u) => this.parts.find((p) => p.uid === u)?.def.name).filter(Boolean))];
+      return names.length ? `Drop ${names.slice(0, 2).join(", ")}${names.length > 2 ? "…" : ""}` : "Separate stage";
+    }
+    if (this.parts.some((p) => p.alive && (p.def.parachute || p.def.landingLeg) && !p.deployed)) {
+      return "Deploy chutes/legs";
+    }
+    return null;
+  }
 }
 
 function edgeKey(a: string, b: string): string {

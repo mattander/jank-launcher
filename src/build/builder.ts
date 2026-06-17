@@ -9,6 +9,7 @@ import {
   newUid,
   computeStats,
 } from "./design";
+import { computeStages } from "./staging";
 import * as storage from "../storage";
 
 const CATEGORY_ORDER: PartCategory[] = [
@@ -46,6 +47,7 @@ export class Builder {
   private statsEl!: HTMLDivElement;
   private actionsEl!: HTMLDivElement;
   private hintEl!: HTMLDivElement;
+  private stagingEl!: HTMLDivElement;
 
   constructor(app: Application, onLaunch: (d: Design) => void) {
     this.app = app;
@@ -97,6 +99,13 @@ export class Builder {
     this.actionsEl.style.maxWidth = "320px";
     document.body.appendChild(this.actionsEl);
     this.renderActions();
+    // staging stack (right side, below actions)
+    this.stagingEl = div("panel");
+    this.stagingEl.style.right = "12px";
+    this.stagingEl.style.top = "112px";
+    this.stagingEl.style.width = "210px";
+    this.stagingEl.style.fontSize = "13px";
+    document.body.appendChild(this.stagingEl);
     // hint (top-center)
     this.hintEl = div("panel");
     this.hintEl.style.left = "50%";
@@ -214,6 +223,7 @@ export class Builder {
     this.statsEl.style.display = d;
     this.actionsEl.style.display = v ? "flex" : "none";
     this.hintEl.style.display = d;
+    this.stagingEl.style.display = d;
   }
 
   // ---------------- placing / snapping ----------------
@@ -443,6 +453,25 @@ export class Builder {
       this.ghostLayer.addChild(g);
     }
     this.updateStats();
+    this.updateStaging();
+  }
+
+  private updateStaging() {
+    const stages = computeStages(this.design);
+    if (stages.length === 0) {
+      this.stagingEl.innerHTML = "<h3>🪜 Staging</h3><div style='opacity:0.7'>No stages — add decouplers or parachutes. Space stages in flight.</div>";
+      return;
+    }
+    // show in firing order, numbered from 1 (first Space press)
+    const rows = stages
+      .map((s, i) => {
+        const icon = s.action === "deploy" ? "🪂" : "✂️";
+        return `<div style="display:flex;gap:6px;padding:3px 0;border-top:1px dashed #b3a684">
+          <b>${i + 1}</b> <span>${icon}</span> <span>${escapeHtml(s.label)}</span></div>`;
+      })
+      .join("");
+    this.stagingEl.innerHTML = `<h3>🪜 Staging</h3>
+      <div style="opacity:0.7;margin-bottom:2px">Space fires these in order:</div>${rows}`;
   }
 
   private drawGuides() {

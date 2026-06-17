@@ -608,6 +608,7 @@ export class FlightScene {
     const weapon = kinds.length ? kinds[this.weaponGroup % kinds.length].toUpperCase() : "—";
     const apo = orb.bound && isFinite(orb.apo) ? fmt(orb.apo - body.radius) : "—";
     const peri = isFinite(orb.peri) ? fmt(orb.peri - body.radius) : "—";
+    const nextStage = this.player.nextStageLabel();
     this.hudEl.innerHTML = `
       <h3>🛰 ${body.name}</h3>
       <div>Altitude: <b>${fmt(alt)}</b></div>
@@ -615,6 +616,7 @@ export class FlightScene {
       <div>Apo/Peri: <b>${apo}</b> / <b>${peri}</b></div>
       <div>Throttle: <b>${(this.throttle * 100).toFixed(0)}%</b> · Fuel: <b>${fuelPct.toFixed(0)}%</b></div>
       <div>Weapon: <b>${weapon}</b> · RCS: <b>${this.rcs ? "on" : "off"}</b> · Warp: <b>${this.warp}×</b></div>
+      <div>Stage ⎵: <b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b></div>
     `;
   }
 
@@ -640,6 +642,10 @@ export class FlightScene {
 }
 
 // ---------------- helpers ----------------
+function escapeHtmlF(s: string): string {
+  return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+}
+
 function fmt(m: number): string {
   const a = Math.abs(m);
   if (a >= 1e6) return (m / 1e6).toFixed(2) + " Mm";
