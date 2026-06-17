@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jank Launcher</title>
+    <style>
+      :root {
+        --ink: #2a2118;
+        --paper: #f3ead6;
+        --paper2: #e9dcbf;
+        --accent: #c84b31;
+        --accent2: #3a7d8c;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Comic Sans MS", "Marker Felt", "Segoe Print", cursive, system-ui, sans-serif;
+        cursor: default;
+        user-select: none;
+      }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+      .panel {
+        position: absolute;
+        background: var(--paper);
+        border: 3px solid var(--ink);
+        border-radius: 10px;
+        box-shadow: 4px 5px 0 rgba(42, 33, 24, 0.35);
+        padding: 8px;
+      }
+      button {
+        font-family: inherit;
+        font-size: 14px;
+        background: var(--paper2);
+        color: var(--ink);
+        border: 2px solid var(--ink);
+        border-radius: 7px;
+        padding: 5px 9px;
+        cursor: pointer;
+        box-shadow: 2px 2px 0 rgba(42, 33, 24, 0.4);
+      }
+      button:hover { background: #fff7e6; }
+      button:active { transform: translate(2px, 2px); box-shadow: none; }
+      button.primary { background: var(--accent); color: #fff7e6; }
+      button.toggled { background: var(--accent2); color: #fff7e6; }
+      h1, h2, h3 { margin: 0 0 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
