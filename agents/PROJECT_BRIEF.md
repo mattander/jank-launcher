@@ -103,11 +103,23 @@ Built:
   ecc < 5e-4 over multiple orbits). Asteroids get the same term.
 - `import.meta.env.DEV` exposes `window.__flight` for debugging the live scene.
 
+### Done since v1
+- Aim reticle + dotted aim line; ballistic rounds converge on the cursor and
+  airburst there with AoE; laser beam ends at the cursor.
+- Trajectory prediction line (Keplerian conic) in flight + on the map, with
+  apo/peri markers (`conicPath` in flightScene).
+- Balance pass: efficient engines (Bonfire ve ~4200), bigger tanks, much lighter
+  drag + steeper atmosphere falloff. A simple Big-Tank rocket reads ~4320 m/s dv
+  at TWR 3.45 and comfortably orbits Terra.
+- Staging UI: `computeStages()` (build/staging.ts) drives a builder stage stack;
+  flight HUD shows the next Space action (`Vessel.nextStageLabel`).
+- Weapon feel: muzzle flash, screen shake, pulsing reticle, procedural audio.
+
 ### Possible next steps / ideas (not yet done)
-- Balance pass so a reasonable multi-stage rocket can comfortably reach orbit /
-  the Moon (the engine numbers are first-draft).
-- Trajectory/orbit prediction line in flight + on the map.
-- Maneuver nodes; SAS/prograde hold.
+- The builder Δv readout is single-stack (whole-rocket rocket equation); it
+  UNDERcounts a staged rocket's real dv. Compute per-stage dv using
+  computeStages() segments for an accurate number.
+- Maneuver nodes; SAS/prograde hold; predict SOI-transition patched conics.
 - Procedural surface detail / biomes; landing-site flags.
 - More parts, target variety, scoring.
 - A real favicon/app icon and a title screen.
