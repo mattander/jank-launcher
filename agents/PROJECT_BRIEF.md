@@ -66,26 +66,42 @@ Repo: https://github.com/mattander/jank-launcher (private).
 
 ## Status / progress
 
-Done:
-- Scaffolding (package.json, tsconfig, vite, index.html shell).
+**v1 is complete and playable end to end.** All modules built, typecheck +
+production build clean, and verified in Chrome via Playwright (build → launch →
+ascent → orbit/HUD → weapons → solar-system map, no console errors).
+
+Built:
+- Scaffolding (package.json, tsconfig, vite, index.html shell, favicon).
 - `src/sketch.ts` — hand-drawn drawing helpers.
 - `src/types.ts` — Vec2 math.
 - `src/parts/catalog.ts` — full part catalog + `drawPart`.
 - `src/camera.ts` — camera + REF_PPM.
-- `src/flight/world.ts` — solar system + gravity/atmosphere.
+- `src/flight/world.ts` — solar system + patched-conic gravity/atmosphere.
 - `src/build/design.ts` — design model + stats.
 - `src/flight/vessel.ts` — vessel physics, staging, break-on-stress, collision.
-
-TODO (remaining build order):
 - `src/flight/weapons.ts` — projectiles, lasers, targets/asteroids, damage.
-- `src/build/builder.ts` — build-mode editor (palette, placement, snapping,
-  drag/delete, stats HUD, save/load/export/import, Launch).
-- `src/flight/flightScene.ts` — flight controller: input, camera follow + zoom +
-  map view, render vessels/bodies/FX, milestones, weapons wiring (mouse-aim,
-  click fire, Tab groups).
+- `src/build/builder.ts` — build-mode editor.
+- `src/flight/fx.ts` — particle/explosion system.
+- `src/flight/flightScene.ts` — flight controller (input, camera, map, HUD,
+  milestones, weapons wiring).
 - `src/storage.ts` — localStorage + JSON import/export.
-- `src/ui/*` — palette, HUD, toasts (may be folded into builder/flightScene).
-- `src/main.ts` + `src/game.ts` — app bootstrap + build<->flight state machine.
+- `src/main.ts` + `src/game.ts` — bootstrap + build<->flight state machine.
+
+### Gotchas learned (important for future work)
+- All velocity-dependent forces (drag, parachutes, collision response) MUST be
+  computed relative to the dominant body's velocity, because bodies carry large
+  orbital velocities in the sun frame. Using absolute velocity caused a phantom
+  ~60,000 m/s² drag and a numerical runaway. See the fix commit.
+- `import.meta.env.DEV` exposes `window.__flight` for debugging the live scene.
+
+### Possible next steps / ideas (not yet done)
+- Balance pass so a reasonable multi-stage rocket can comfortably reach orbit /
+  the Moon (the engine numbers are first-draft).
+- Trajectory/orbit prediction line in flight + on the map.
+- Maneuver nodes; SAS/prograde hold.
+- Procedural surface detail / biomes; landing-site flags.
+- More parts, target variety, scoring.
+- A real favicon/app icon and a title screen.
 
 ## How to run / verify
 
