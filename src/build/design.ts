@@ -8,6 +8,7 @@ export interface PlacedPart {
   x: number;
   y: number;
   flip: boolean;
+  parentUid?: string; // the part this one is attached to (undefined for the root)
 }
 
 export interface Design {

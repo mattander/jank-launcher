@@ -517,38 +517,23 @@ export function assembleVessel(design: Design): Vessel {
     };
   });
 
-  // adjacency: connect parts whose attach nodes nearly coincide in local space
+  // adjacency comes from explicit parent links recorded by the builder
   const adj = new Map<string, Set<string>>();
   const strength = new Map<string, number>();
+  const byUid = new Map(parts.map((p) => [p.uid, p]));
   for (const p of parts) adj.set(p.uid, new Set());
 
-  const worldNodes = design.parts.flatMap((pp) => {
-    const def = getPart(pp.defId);
-    return def.nodes.map((n) => ({
-      uid: pp.uid,
-      x: pp.x + (pp.flip ? -n.x : n.x),
-      y: pp.y + n.y,
-    }));
-  });
-
-  const EPS = 0.7;
-  for (let i = 0; i < worldNodes.length; i++) {
-    for (let j = i + 1; j < worldNodes.length; j++) {
-      const a = worldNodes[i];
-      const b = worldNodes[j];
-      if (a.uid === b.uid) continue;
-      if (Math.hypot(a.x - b.x, a.y - b.y) < EPS) {
-        adj.get(a.uid)!.add(b.uid);
-        adj.get(b.uid)!.add(a.uid);
-        const da = parts.find((p) => p.uid === a.uid)!.def;
-        const db = parts.find((p) => p.uid === b.uid)!.def;
-        const sm = Math.min(da.strengthMul ?? 1, db.strengthMul ?? 1);
-        const width = (da.width + db.width) / 2;
-        strength.set(edgeKey(a.uid, b.uid), BASE_STRENGTH * width * sm);
-      }
-    }
+  for (const pp of design.parts) {
+    if (!pp.parentUid) continue;
+    const a = byUid.get(pp.uid);
+    const b = byUid.get(pp.parentUid);
+    if (!a || !b) continue;
+    adj.get(a.uid)!.add(b.uid);
+    adj.get(b.uid)!.add(a.uid);
+    const sm = Math.min(a.def.strengthMul ?? 1, b.def.strengthMul ?? 1);
+    const width = (a.def.width + b.def.width) / 2;
+    strength.set(edgeKey(a.uid, b.uid), BASE_STRENGTH * width * sm);
   }
 
-  const v = new Vessel(parts, adj, strength);
-  return v;
+  return new Vessel(parts, adj, strength);
 }
