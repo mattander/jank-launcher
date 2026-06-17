@@ -11,7 +11,13 @@ export interface Projectile {
   kind: "cannon" | "missile";
   ownerId: number;
   alive: boolean;
+  // aim point stored relative to a body so it converges on the cursor on-screen
+  // even as everything moves at orbital speed; detonates on arrival.
+  targetRel?: Vec2;
+  targetBody?: string;
 }
+
+const BLAST = { cannon: 130, missile: 300 } as const;
 
 export interface Target {
   pos: Vec2;
@@ -75,38 +81,33 @@ export class Combat {
   }
 
   // Fire a ballistic weapon. `origin` world pos, `dir` unit aim direction.
-  fire(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerVel: Vec2, ownerId: number, fx: Fx) {
-    if (spec.kind === "cannon") {
-      this.projectiles.push({
-        pos: { ...origin },
-        vel: V.add(ownerVel, V.scale(dir, spec.speed)),
-        life: 6,
-        damage: spec.damage,
-        kind: "cannon",
-        ownerId,
-        alive: true,
-      });
-      fx.puff(origin, V.scale(dir, 60), 0xffd27f);
-    } else {
-      // missile: dumb-fire, accelerates along dir
-      this.projectiles.push({
-        pos: { ...origin },
-        vel: V.add(ownerVel, V.scale(dir, spec.speed * 0.4)),
-        life: 8,
-        damage: spec.damage,
-        kind: "missile",
-        ownerId,
-        alive: true,
-      });
-      fx.puff(origin, V.scale(dir, 30), 0xff8a3d);
-    }
+  // `aim` is the cursor world point; the round detonates there if it gets that
+  // far without hitting something first.
+  fire(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerVel: Vec2, ownerId: number, fx: Fx, aim: Vec2, world: World) {
+    const aimBody = world.dominantBody(aim);
+    const targetRel = V.sub(aim, aimBody.pos);
+    const cannon = spec.kind === "cannon";
+    this.projectiles.push({
+      pos: { ...origin },
+      vel: V.add(ownerVel, V.scale(dir, cannon ? spec.speed : spec.speed * 0.4)),
+      life: cannon ? 6 : 8,
+      damage: spec.damage,
+      kind: cannon ? "cannon" : "missile",
+      ownerId,
+      alive: true,
+      targetRel,
+      targetBody: aimBody.id,
+    });
+    fx.puff(origin, V.scale(dir, cannon ? 60 : 30), cannon ? 0xffd27f : 0xff8a3d);
   }
 
   // Continuous laser: instant ray, drawn and applied immediately so the beam is
   // in sync with rendering. Called once per frame per laser while firing.
-  fireLaser(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerId: number, fx: Fx, world: World, vessels: Vessel[]) {
-    const hit = this.rayHit(origin, dir, spec.range, world, vessels, ownerId);
-    const end = hit ? hit.point : V.add(origin, V.scale(dir, spec.range));
+  fireLaser(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerId: number, fx: Fx, world: World, vessels: Vessel[], aim: Vec2) {
+    // the beam reaches the cursor (or the first thing it hits before then)
+    const range = Math.min(spec.range, Math.max(60, V.len(V.sub(aim, origin))));
+    const hit = this.rayHit(origin, dir, range, world, vessels, ownerId);
+    const end = hit ? hit.point : V.add(origin, V.scale(dir, range));
     this.beams.push({ a: { ...origin }, b: end, life: 0.06, hit: !!hit });
     if (hit) {
       this.applyDamage(hit, spec.damage * 0.05, fx);
@@ -157,33 +158,26 @@ export class Combat {
       // terrain hit
       const body = world.dominantBody(next);
       if (V.len(V.sub(next, body.pos)) < body.radius) {
-        fx.explosion(next, pr.kind === "missile" ? 2 : 1.2);
-        pr.alive = false;
+        this.detonate(pr, next, fx, vessels);
         continue;
       }
-      // target hit
+      // direct hit on a target
       let consumed = false;
       for (const t of this.targets) {
-        if (!t.alive) continue;
-        if (V.len(V.sub(next, t.pos)) < t.radius) {
-          this.hurtTarget(t, pr.damage, fx);
-          fx.explosion(next, pr.kind === "missile" ? 2 : 1.2);
-          pr.alive = false;
+        if (t.alive && V.len(V.sub(next, t.pos)) < t.radius) {
+          this.detonate(pr, next, fx, vessels);
           consumed = true;
           break;
         }
       }
       if (consumed) continue;
-      // vessel hit
+      // direct hit on another vessel
       for (const v of vessels) {
         if (v.id === pr.ownerId) continue;
         for (const p of v.aliveParts()) {
-          const w = v.partWorld(p);
           const r = Math.max(p.def.width, p.def.height) * 0.6;
-          if (V.len(V.sub(next, w)) < r) {
-            v.damagePart(p, pr.damage, fx);
-            fx.explosion(next, pr.kind === "missile" ? 2 : 1.2);
-            pr.alive = false;
+          if (V.len(V.sub(next, v.partWorld(p))) < r) {
+            this.detonate(pr, next, fx, vessels);
             consumed = true;
             break;
           }
@@ -191,9 +185,39 @@ export class Combat {
         if (consumed) break;
       }
       if (consumed) continue;
+
+      // reached the aim point? airburst there.
+      if (pr.targetRel && pr.targetBody) {
+        const tb = world.get(pr.targetBody);
+        const target = V.add(tb.pos, pr.targetRel);
+        const toTarget = V.sub(target, next);
+        const vRel = V.sub(pr.vel, tb.vel);
+        // arrived (close) or passed the target plane along travel direction
+        if (V.len(toTarget) < 25 || (toTarget.x * vRel.x + toTarget.y * vRel.y) < 0) {
+          this.detonate(pr, next, fx, vessels);
+          continue;
+        }
+      }
       pr.pos = next;
     }
     this.projectiles = this.projectiles.filter((p) => p.alive);
+  }
+
+  // Explode at `at`: visual blast + area damage to nearby targets and vessels.
+  private detonate(pr: Projectile, at: Vec2, fx: Fx, vessels: Vessel[]) {
+    pr.alive = false;
+    const blast = BLAST[pr.kind];
+    fx.explosion(at, pr.kind === "missile" ? 2.2 : 1.4);
+    for (const t of this.targets) {
+      if (t.alive && V.len(V.sub(at, t.pos)) < blast + t.radius) this.hurtTarget(t, pr.damage, fx);
+    }
+    for (const v of vessels) {
+      if (v.id === pr.ownerId) continue;
+      for (const p of v.aliveParts()) {
+        const d = V.len(V.sub(at, v.partWorld(p)));
+        if (d < blast) v.damagePart(p, pr.damage * (1 - d / blast), fx);
+      }
+    }
   }
 
   private hurtTarget(t: Target, dmg: number, fx: Fx) {

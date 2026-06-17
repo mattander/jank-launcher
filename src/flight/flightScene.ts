@@ -20,6 +20,7 @@ export class FlightScene {
   private vesselsLayer = new Container();
   private gProj = new Graphics();
   private gParticles = new Graphics();
+  private gAim = new Graphics();
   private gMap = new Graphics();
   private partSprites = new Map<string, Graphics>();
 
@@ -53,7 +54,7 @@ export class FlightScene {
   constructor(app: Application, onExit: () => void) {
     this.app = app;
     this.onExit = onExit;
-    this.layer.addChild(this.gSky, this.gBodies, this.gParticles, this.vesselsLayer, this.gProj, this.gMap);
+    this.layer.addChild(this.gSky, this.gBodies, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gMap);
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
@@ -261,9 +262,9 @@ export class FlightScene {
       const origin = this.player.partWorld(p);
       const dir = V.norm(V.sub(aim, origin));
       if (spec.kind === "laser") {
-        this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels);
+        this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels, aim);
       } else {
-        this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx);
+        this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx, aim, this.world);
         if (spec.kind === "cannon") this.audio.cannon();
         else this.audio.missile();
       }
@@ -304,6 +305,7 @@ export class FlightScene {
       this.gBodies.clear();
       this.gProj.clear();
       this.gParticles.clear();
+      this.gAim.clear();
       this.hideAllSprites();
       return;
     }
@@ -314,6 +316,7 @@ export class FlightScene {
     this.drawProjectiles();
     this.gParticles.clear();
     this.fx.draw(this.gParticles, this.cam);
+    this.drawAim();
   }
 
   private drawSky() {
@@ -440,6 +443,51 @@ export class FlightScene {
       g.lineTo(e.x, e.y);
       g.stroke({ color: 0xffd2d2, width: 1, alpha: Math.min(1, b.life / 0.1) });
     }
+  }
+
+  private drawAim() {
+    const g = this.gAim;
+    g.clear();
+    if (!this.player) return;
+    const kinds = this.availableWeaponKinds();
+    if (kinds.length === 0) return; // only show aim when armed
+    const kind = kinds[this.weaponGroup % kinds.length];
+    const color =
+      kind === "laser" ? 0xc84b31 : kind === "missile" ? 0x3a7d8c : 0xd98a3d;
+
+    const from = this.cam.worldToScreen(this.player.pos);
+    const to = this.aimScreen;
+
+    // dotted line from craft to cursor
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const dash = 9;
+    const gap = 7;
+    for (let d = 18; d < len - 22; d += dash + gap) {
+      const x0 = from.x + ux * d;
+      const y0 = from.y + uy * d;
+      const x1 = from.x + ux * Math.min(d + dash, len - 22);
+      const y1 = from.y + uy * Math.min(d + dash, len - 22);
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+    }
+    g.stroke({ color, width: 2, alpha: 0.5 });
+
+    // reticle at the cursor
+    const r = 13;
+    g.poly(circlePoints(to.x, to.y, r, 20));
+    g.stroke({ color, width: 2, alpha: 0.9 });
+    const tick = 6;
+    for (const [tx, ty] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      g.moveTo(to.x + tx * (r - tick), to.y + ty * (r - tick));
+      g.lineTo(to.x + tx * (r + tick), to.y + ty * (r + tick));
+    }
+    g.stroke({ color, width: 2, alpha: 0.9 });
+    g.circle(to.x, to.y, 1.5);
+    g.fill({ color });
   }
 
   private renderMap() {
