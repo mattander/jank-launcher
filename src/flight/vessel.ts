@@ -185,7 +185,10 @@ export class Vessel {
 
     const up = this.upDir();
     const grav = world.gravityAt(this.pos, body);
-    let accel = V.add(grav, V.scale(up, thrust / this.mass));
+    // Patched-conic: dominant body's gravity + that body's own frame acceleration,
+    // so the body frame is locally inertial (no drift relative to the planet).
+    let accel = V.add(grav, world.bodyFrameAccel(body));
+    accel = V.add(accel, V.scale(up, thrust / this.mass));
 
     // ---- aero drag (light) ---- relative to the body's atmosphere, not the sun
     const rho = world.airDensity(this.pos, body);

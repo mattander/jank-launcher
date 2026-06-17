@@ -119,6 +119,20 @@ export class World {
     return best;
   }
 
+  // The acceleration of a body's own (kinematic) motion through the world frame.
+  // For a body on a fixed circular orbit this is exact: centripetal toward its
+  // parent, plus the parent's own frame acceleration (recursively). Adding this
+  // to a craft inside the body's SOI makes the body frame behave as inertial, so
+  // a landed craft co-moves with its planet and orbits stay Keplerian relative to
+  // it — without storing state in a moving frame.
+  bodyFrameAccel(body: Body): Vec2 {
+    if (!body.parent) return { x: 0, y: 0 };
+    const parent = this.byId.get(body.parent)!;
+    const d = V.sub(body.pos, parent.pos); // outward from parent
+    const centripetal = V.scale(d, -body.omega * body.omega); // toward parent
+    return V.add(centripetal, this.bodyFrameAccel(parent));
+  }
+
   // Gravity acceleration at a point, from the dominant body only (patched conic).
   gravityAt(pos: Vec2, body?: Body): Vec2 {
     const b = body ?? this.dominantBody(pos);

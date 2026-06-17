@@ -131,7 +131,8 @@ export class Combat {
       if (!t.alive) continue;
       t.bob += dt;
       if (t.kind === "asteroid") {
-        const g = world.gravityAt(t.pos);
+        const b = world.dominantBody(t.pos);
+        const g = V.add(world.gravityAt(t.pos, b), world.bodyFrameAccel(b));
         t.vel = V.add(t.vel, V.scale(g, dt));
       }
       t.pos = V.add(t.pos, V.scale(t.vel, dt));

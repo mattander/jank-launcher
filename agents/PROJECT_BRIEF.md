@@ -92,6 +92,15 @@ Built:
   computed relative to the dominant body's velocity, because bodies carry large
   orbital velocities in the sun frame. Using absolute velocity caused a phantom
   ~60,000 m/s² drag and a numerical runaway. See the fix commit.
+- The camera hard-follows the craft (no positional smoothing). The world moves
+  at orbital speed (~8.8 km/s), so smoothing on absolute position lags the craft
+  off-screen.
+- Orbital integration uses `World.bodyFrameAccel(body)`: the craft gets the
+  dominant body's gravity PLUS that body's own (kinematic) frame acceleration.
+  This makes the SOI body frame locally inertial in absolute coordinates, so a
+  landed craft co-moves with its planet and orbits stay Keplerian relative to it
+  (verified rock-solid: 100 km circular orbit holds apo/peri within ~0.3 km and
+  ecc < 5e-4 over multiple orbits). Asteroids get the same term.
 - `import.meta.env.DEV` exposes `window.__flight` for debugging the live scene.
 
 ### Possible next steps / ideas (not yet done)
