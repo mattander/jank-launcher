@@ -197,7 +197,7 @@ export class Vessel {
       const speed = V.len(vRelAir);
       if (speed > 0.1) {
         const area = this.dragArea();
-        const dragK = 0.0009;
+        const dragK = 0.00018;
         const fDrag = dragK * rho * speed * speed * area;
         accel = V.add(accel, V.scale(V.norm(vRelAir), -fDrag / this.mass));
       }

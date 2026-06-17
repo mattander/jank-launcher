@@ -99,8 +99,8 @@ export const PARTS: PartDef[] = [
     name: "Small Tank",
     category: "fuel",
     blurb: "Holds a modest splash of go-juice.",
-    width: 2.0, height: 2.4, mass: 0.2, color: C.orange, shape: "tank",
-    fuel: 200,
+    width: 2.0, height: 2.4, mass: 0.18, color: C.orange, shape: "tank",
+    fuel: 240,
     nodes: [{ x: 0, y: 1.2, type: "stack" }, { x: 0, y: -1.2, type: "stack" }],
   },
   {
@@ -108,8 +108,8 @@ export const PARTS: PartDef[] = [
     name: "Big Tank",
     category: "fuel",
     blurb: "A lot of go-juice. Heavy when full.",
-    width: 2.2, height: 4.6, mass: 0.5, color: C.orange, shape: "tank",
-    fuel: 520,
+    width: 2.2, height: 4.6, mass: 0.4, color: C.orange, shape: "tank",
+    fuel: 720,
     nodes: [{ x: 0, y: 2.3, type: "stack" }, { x: 0, y: -2.3, type: "stack" }],
   },
   {
@@ -117,8 +117,8 @@ export const PARTS: PartDef[] = [
     name: "Radial Tank",
     category: "fuel",
     blurb: "Strap-on fuel for the sides.",
-    width: 1.2, height: 3.0, mass: 0.15, color: C.copper, shape: "tank",
-    fuel: 140,
+    width: 1.2, height: 3.0, mass: 0.12, color: C.copper, shape: "tank",
+    fuel: 170,
     nodes: [{ x: -0.6, y: 0, type: "radial" }],
   },
 
@@ -129,7 +129,7 @@ export const PARTS: PartDef[] = [
     category: "engine",
     blurb: "Big dumb thrust. Gimbals for steering.",
     width: 2.2, height: 1.8, mass: 0.6, color: C.dark, shape: "engine",
-    thrust: 240, fuelBurn: 22, gimbal: true,
+    thrust: 190, fuelBurn: 9, gimbal: true,
     nodes: [{ x: 0, y: 0.9, type: "stack" }],
   },
   {
@@ -138,7 +138,7 @@ export const PARTS: PartDef[] = [
     category: "engine",
     blurb: "Efficient little vacuum poker.",
     width: 1.3, height: 1.3, mass: 0.25, color: C.dark, shape: "engine",
-    thrust: 70, fuelBurn: 5, gimbal: true,
+    thrust: 70, fuelBurn: 3.4, gimbal: true,
     nodes: [{ x: 0, y: 0.65, type: "stack" }],
   },
   {
@@ -147,7 +147,7 @@ export const PARTS: PartDef[] = [
     category: "engine",
     blurb: "Bolts to the side, points down.",
     width: 1.0, height: 1.4, mass: 0.2, color: C.dark, shape: "engine",
-    thrust: 60, fuelBurn: 6,
+    thrust: 70, fuelBurn: 4.4,
     nodes: [{ x: -0.5, y: 0.4, type: "radial" }],
   },
   {
@@ -156,7 +156,7 @@ export const PARTS: PartDef[] = [
     category: "engine",
     blurb: "Light it and pray. No off switch.",
     width: 1.6, height: 4.4, mass: 0.45, color: C.white, shape: "srb",
-    thrust: 180, fuelBurn: 20, solid: true, fuel: 260,
+    thrust: 240, fuelBurn: 22, solid: true, fuel: 360,
     nodes: [{ x: 0, y: 2.2, type: "stack" }, { x: -0.8, y: 0.6, type: "radial" }],
   },
 

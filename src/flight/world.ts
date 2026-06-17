@@ -148,7 +148,7 @@ export class World {
     if (b.atmoHeight <= 0) return 0;
     const alt = V.len(V.sub(pos, b.pos)) - b.radius;
     if (alt < 0 || alt > b.atmoHeight) return 0;
-    return Math.exp(-alt / (b.atmoHeight * 0.25));
+    return Math.exp(-alt / (b.atmoHeight * 0.18));
   }
 
   altitudeAbove(pos: Vec2, body: Body): number {
