@@ -73,7 +73,9 @@ export function sketchLine(g: Graphics, points: Pt[], style: SketchStyle = {}) {
 
 // Approximate a circle as a jittered polygon so it looks hand-drawn.
 export function sketchCircle(g: Graphics, cx: number, cy: number, r: number, style: SketchStyle = {}) {
-  const segs = Math.max(10, Math.round(r * 0.6));
+  // Cap segments: without this, large on-screen radii produce thousands of
+  // segments per frame and tank the CPU.
+  const segs = Math.max(10, Math.min(48, Math.round(r * 0.5)));
   const pts: Pt[] = [];
   for (let i = 0; i < segs; i++) {
     const a = (i / segs) * Math.PI * 2;

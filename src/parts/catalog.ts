@@ -360,11 +360,17 @@ export function drawPart(g: Graphics, def: PartDef, pxPerM: number) {
       }
       break;
     case "engine": {
-      // body box + flared nozzle at bottom
-      sketchBox(g, hw * 0.7, hh * 0.5, { ...base, fill: def.color });
+      // body fills from the top node down; flared nozzle at the bottom
+      const midY = hh * 0.2;
       sketchPoly(g, [
-        [-hw * 0.6, 0],
-        [hw * 0.6, 0],
+        [-hw * 0.72, -hh],
+        [hw * 0.72, -hh],
+        [hw * 0.72, midY],
+        [-hw * 0.72, midY],
+      ], { ...base, fill: def.color });
+      sketchPoly(g, [
+        [-hw * 0.6, midY],
+        [hw * 0.6, midY],
         [hw, hh],
         [-hw, hh],
       ], { ...base, fill: 0x3a3228, seed: seed + 5 });

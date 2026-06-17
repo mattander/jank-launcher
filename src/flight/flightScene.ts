@@ -216,10 +216,10 @@ export class FlightScene {
       this.toastOnce("rip", "💀 Your craft is gone. Esc to head back to the hangar.");
     }
 
-    // camera follow
-    if (!this.mapMode) {
-      this.cam.center = lerpVec(this.cam.center, this.player.pos, Math.min(1, frameDt * 6));
-    }
+    // camera follow — hard-follow the craft. The whole world moves at orbital
+    // speed (~8.8 km/s), so smoothing on absolute position can't keep up and the
+    // craft flies off-screen; track it exactly instead.
+    if (!this.mapMode) this.cam.center = { ...this.player.pos };
 
     this.checkMilestones();
     this.render();
@@ -331,10 +331,13 @@ export class FlightScene {
       g.stroke({ color: 0x2a2118, width: 2, alpha: 0.5 });
     }
     // floating targets
+    const W = this.cam.screenW;
+    const H = this.cam.screenH;
     for (const t of this.combat.targets) {
       const s = this.cam.worldToScreen(t.pos);
       const r = t.radius * this.cam.zoom;
       if (r < 1) continue;
+      if (s.x + r < 0 || s.x - r > W || s.y + r < 0 || s.y - r > H) continue; // off-screen
       sketchCircle(g, s.x, s.y, r, {
         fill: t.kind === "asteroid" ? 0x8a7b63 : 0xc84b31,
         stroke: 0x2a2118,
@@ -517,10 +520,6 @@ function fmt(m: number): string {
   if (a >= 1e6) return (m / 1e6).toFixed(2) + " Mm";
   if (a >= 1000) return (m / 1000).toFixed(2) + " km";
   return m.toFixed(0) + " m";
-}
-
-function lerpVec(a: Vec2, b: Vec2, t: number): Vec2 {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
 function lerpColor(a: number, b: number, t: number): number {
