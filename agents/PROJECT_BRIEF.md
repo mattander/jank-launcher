@@ -120,6 +120,15 @@ Built:
 - Build QOL: unified stack-or-surface attachment (tanks/SRBs side-mount and go on
   radial decouplers); 2x symmetry (X key); engines have bottom nodes so vertical
   multi-stage stacks work; auto-fairing shroud on interstage engines.
+- Builder layout is a CSS-grid overlay (pointer-events:none container, panels in
+  named areas; clicks pass through empty cells to the canvas).
+- Map view: steer/throttle/stage while it frames the orbit around the dominant
+  body; oriented craft + prograde markers; trajectory line.
+- Stock rockets: `src/build/stock.ts` (📦 Stock button), deep-cloned on load.
+- Orbital math lives in `src/flight/orbit.ts` (pure, no pixi) for testability.
+- Tests: Vitest (`npm test`). pixi.js is stubbed via `test/pixi-stub.ts` aliased
+  in `vitest.config.ts` so logic modules import cleanly under Node. Suites cover
+  types/world/orbit/design/staging/vessel.
 
 ### Possible next steps / ideas (not yet done)
 - The builder Δv readout is single-stack (whole-rocket rocket equation); it

@@ -16,6 +16,19 @@ npm run dev
 
 Then open the local URL Vite prints.
 
+## Develop
+
+```bash
+npm run dev        # play with hot reload
+npm test           # run the unit tests (Vitest)
+npm run typecheck  # tsc --noEmit
+npm run build      # typecheck + production bundle
+```
+
+Tests cover the pure logic (vector math, world gravity/frame-acceleration,
+Keplerian orbit/conic math, design stats, staging, vessel assembly/staging/
+fairings). `pixi.js` is stubbed for those so they run headless under Node.
+
 ## How to play
 
 ### Build mode
