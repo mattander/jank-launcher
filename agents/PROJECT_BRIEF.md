@@ -114,6 +114,12 @@ Built:
 - Staging UI: `computeStages()` (build/staging.ts) drives a builder stage stack;
   flight HUD shows the next Space action (`Vessel.nextStageLabel`).
 - Weapon feel: muzzle flash, screen shake, pulsing reticle, procedural audio.
+- Weapons fly to target: missiles are guided rockets, cannons ballistic+short,
+  lasers instant/long. Aim point stored relative to the dominant body.
+- HiDPI fix: camera uses `app.screen` (logical px), not renderer.width.
+- Build QOL: unified stack-or-surface attachment (tanks/SRBs side-mount and go on
+  radial decouplers); 2x symmetry (X key); engines have bottom nodes so vertical
+  multi-stage stacks work; auto-fairing shroud on interstage engines.
 
 ### Possible next steps / ideas (not yet done)
 - The builder Δv readout is single-stack (whole-rocket rocket equation); it
