@@ -185,8 +185,14 @@ export class FlightScene {
   private toggleMap() {
     this.mapMode = !this.mapMode;
     if (this.mapMode) {
-      this.cam.center = { ...this.world.get("sun").pos };
-      this.cam.zoom = (this.app.renderer.height * 0.4) / 2.3e10;
+      // frame the craft's orbit around its dominant body so you can steer & watch it
+      const body = this.player ? this.world.dominantBody(this.player.pos) : this.world.get("terra");
+      const orb = this.player ? orbit(this.player.pos, this.player.vel, body) : null;
+      const span = orb && orb.bound && isFinite(orb.apo)
+        ? Math.max(orb.apo, body.radius * 2) * 2.4
+        : body.radius * 6;
+      this.cam.center = { ...body.pos };
+      this.cam.zoom = (this.app.screen.height * 0.85) / span;
     } else {
       if (this.player) this.cam.center = { ...this.player.pos };
       this.cam.zoom = 8;
@@ -248,7 +254,12 @@ export class FlightScene {
     // camera follow — hard-follow the craft. The whole world moves at orbital
     // speed (~8.8 km/s), so smoothing on absolute position can't keep up and the
     // craft flies off-screen; track it exactly instead.
-    if (!this.mapMode) this.cam.center = { ...this.player.pos };
+    if (!this.mapMode) {
+      this.cam.center = { ...this.player.pos };
+    } else {
+      // keep the orbit framed: follow the dominant body (it drifts through space)
+      this.cam.center = { ...this.world.dominantBody(this.player.pos).pos };
+    }
     this.shake *= Math.exp(-frameDt * 7); // decay screen shake
 
     this.checkMilestones();
@@ -594,13 +605,30 @@ export class FlightScene {
     }
     // predicted trajectory (drawn into the same map graphics)
     this.drawTrajectory(g, 0.85, false);
-    // player marker
+    // player marker: a triangle pointing the craft's heading, plus a prograde tick
     if (this.player) {
       const s = this.cam.worldToScreen(this.player.pos);
-      g.circle(s.x, s.y, 5);
+      const up = this.player.upDir(); // craft facing (world, y-up)
+      const hx = up.x, hy = -up.y; // same direction in screen space (y-down)
+      const px = -hy, py = hx; // perpendicular
+      g.poly([
+        s.x + hx * 12, s.y + hy * 12, // tip (heading)
+        s.x - hx * 7 + px * 6, s.y - hy * 7 + py * 6,
+        s.x - hx * 7 - px * 6, s.y - hy * 7 - py * 6,
+      ]);
       g.fill({ color: 0xffffff });
-      g.circle(s.x, s.y, 9);
-      g.stroke({ color: 0xffffff, width: 1.5, alpha: 0.8 });
+      g.stroke({ color: 0x2a2118, width: 1.5 });
+      // prograde marker (velocity relative to dominant body)
+      const body = this.world.dominantBody(this.player.pos);
+      const vRel = V.sub(this.player.vel, body.vel);
+      if (V.len(vRel) > 1) {
+        const d = V.norm(vRel);
+        const pg = { x: s.x + d.x * 24, y: s.y - d.y * 24 };
+        g.circle(pg.x, pg.y, 4);
+        g.stroke({ color: 0xffd27f, width: 2 });
+        g.circle(pg.x, pg.y, 1.2);
+        g.fill({ color: 0xffd27f });
+      }
     }
   }
 
