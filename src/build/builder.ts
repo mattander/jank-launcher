@@ -106,21 +106,24 @@ export class Builder {
     this.actionsEl.style.maxWidth = "320px";
     document.body.appendChild(this.actionsEl);
     this.renderActions();
-    // staging stack (right side, below actions)
+    // staging stack (bottom-right, clear of the top-right actions)
     this.stagingEl = div("panel");
     this.stagingEl.style.right = "12px";
-    this.stagingEl.style.top = "156px";
-    this.stagingEl.style.width = "210px";
+    this.stagingEl.style.bottom = "12px";
+    this.stagingEl.style.width = "230px";
+    this.stagingEl.style.maxHeight = "42vh";
+    this.stagingEl.style.overflowY = "auto";
     this.stagingEl.style.fontSize = "13px";
     document.body.appendChild(this.stagingEl);
     // hint (top-center)
     this.hintEl = div("panel");
-    this.hintEl.style.left = "50%";
+    this.hintEl.style.left = "calc(252px + (100vw - 252px - 340px) / 2)"; // centred in the open area between palette and actions
     this.hintEl.style.top = "12px";
     this.hintEl.style.transform = "translateX(-50%)";
-    this.hintEl.style.fontSize = "13px";
-    this.hintEl.textContent =
-      "Click a part, then click in the hangar to place. Drag to move · Right-click to delete · Wheel to zoom";
+    this.hintEl.style.fontSize = "12px";
+    this.hintEl.style.maxWidth = "440px";
+    this.hintEl.style.textAlign = "center";
+    this.hintEl.textContent = Builder.HINT;
     document.body.appendChild(this.hintEl);
   }
 
@@ -183,9 +186,9 @@ export class Builder {
       this.render();
     });
     const symBtn = document.createElement("button");
-    symBtn.textContent = this.symmetry === 2 ? "⧉ Symmetry: 2×" : "⧉ Symmetry: off";
+    symBtn.textContent = this.symmetry === 2 ? "⧉ 2×" : "⧉ 1×";
     if (this.symmetry === 2) symBtn.className = "toggled";
-    symBtn.title = "Mirror side-mounted parts (X)";
+    symBtn.title = "Symmetry: mirror side-mounted parts (X)";
     symBtn.onclick = () => this.toggleSymmetry();
     this.actionsEl.appendChild(symBtn);
   }
@@ -228,11 +231,13 @@ export class Builder {
     this.onLaunch(this.design);
   }
 
+  private static readonly HINT =
+    "Click a part, then click to place · Drag to move · Right-click to delete · Wheel to zoom · X for symmetry";
+
   private flashHint(msg: string) {
     this.hintEl.textContent = msg;
     setTimeout(() => {
-      this.hintEl.textContent =
-        "Click a part, then click in the hangar to place. Drag to move · Right-click to delete · Wheel to zoom";
+      this.hintEl.textContent = Builder.HINT;
     }, 2200);
   }
 
