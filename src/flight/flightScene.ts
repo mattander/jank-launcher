@@ -51,14 +51,18 @@ export class FlightScene {
   private milestones = new Set<string>();
   private lastBodyId = "terra";
 
-  private hudEl!: HTMLDivElement;
+  private gridEl!: HTMLDivElement;
+  private navEl!: HTMLDivElement;
+  private gaugesEl!: HTMLDivElement;
+  private statusEl!: HTMLDivElement;
   private toastEl!: HTMLDivElement;
   private helpEl!: HTMLDivElement;
+  private gNav = new Graphics();
 
   constructor(app: Application, onExit: () => void) {
     this.app = app;
     this.onExit = onExit;
-    this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gMap);
+    this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gNav, this.gMap);
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
@@ -332,6 +336,7 @@ export class FlightScene {
       this.gParticles.clear();
       this.gAim.clear();
       this.gTraj.clear();
+      this.gNav.clear();
       this.hideAllSprites();
       this.layer.position.set(0, 0);
       return;
@@ -351,6 +356,7 @@ export class FlightScene {
     this.gParticles.clear();
     this.fx.draw(this.gParticles, this.cam);
     this.drawAim();
+    this.drawNavball();
   }
 
   private drawSky() {
@@ -634,67 +640,177 @@ export class FlightScene {
   }
 
   // ---------------- HUD / DOM ----------------
+  // Full-screen CSS-grid overlay (like the builder): nav top-left, status
+  // top-right, gauges bottom-left, help bottom-right, toasts top-centre, and a
+  // Pixi navball drawn in the empty bottom-centre.
   private buildDom() {
-    this.hudEl = mkPanel();
-    this.hudEl.style.left = "12px";
-    this.hudEl.style.bottom = "12px";
-    this.hudEl.style.minWidth = "240px";
-    document.body.appendChild(this.hudEl);
+    this.gridEl = document.createElement("div");
+    Object.assign(this.gridEl.style, {
+      position: "fixed",
+      inset: "0",
+      display: "grid",
+      padding: "12px",
+      gap: "10px",
+      gridTemplateColumns: "auto 1fr auto",
+      gridTemplateRows: "auto 1fr auto",
+      gridTemplateAreas: `"nav toast status" "nav . status" "gauges . help"`,
+      pointerEvents: "none",
+    } satisfies Partial<CSSStyleDeclaration>);
+    document.body.appendChild(this.gridEl);
+
+    const inGrid = (el: HTMLDivElement, area: string, justify: string, align: string) => {
+      el.style.gridArea = area;
+      el.style.justifySelf = justify;
+      el.style.alignSelf = align;
+      el.style.pointerEvents = "auto";
+      this.gridEl.appendChild(el);
+    };
+
+    this.navEl = mkPanel();
+    this.navEl.style.minWidth = "190px";
+    inGrid(this.navEl, "nav", "start", "start");
+
+    this.statusEl = mkPanel();
+    this.statusEl.style.minWidth = "150px";
+    inGrid(this.statusEl, "status", "end", "start");
+
+    this.gaugesEl = mkPanel();
+    this.gaugesEl.style.width = "230px";
+    inGrid(this.gaugesEl, "gauges", "start", "end");
 
     this.helpEl = mkPanel();
-    this.helpEl.style.right = "12px";
-    this.helpEl.style.bottom = "12px";
-    this.helpEl.style.fontSize = "12px";
-    this.helpEl.style.maxWidth = "220px";
+    this.helpEl.style.fontSize = "11px";
+    this.helpEl.style.width = "270px";
+    this.helpEl.style.lineHeight = "1.6";
     this.helpEl.innerHTML =
-      "<b>A/D</b> rotate · <b>W/S</b> throttle<br><b>Shift/Ctrl</b> full/cut<br>" +
-      "<b>Space</b> stage · <b>R</b> RCS<br><b>Mouse</b> aim · <b>Click/F</b> fire<br>" +
-      "<b>Tab</b> weapon · <b>M</b> map<br><b>,/.</b> warp · <b>N</b> mute · <b>Esc</b> hangar";
-    document.body.appendChild(this.helpEl);
+      "<b>A/D</b> rotate · <b>W/S</b> throttle · <b>Shift/Ctrl</b> full/cut · " +
+      "<b>Space</b> stage · <b>R</b> RCS · <b>Mouse</b> aim · <b>Click/F</b> fire · " +
+      "<b>Tab</b> weapon · <b>M</b> map · <b>,/.</b> warp · <b>N</b> mute · <b>Esc</b> hangar";
+    inGrid(this.helpEl, "help", "end", "end");
 
     this.toastEl = document.createElement("div");
-    this.toastEl.style.position = "absolute";
-    this.toastEl.style.top = "16px";
-    this.toastEl.style.left = "50%";
-    this.toastEl.style.transform = "translateX(-50%)";
-    this.toastEl.style.display = "flex";
-    this.toastEl.style.flexDirection = "column";
-    this.toastEl.style.gap = "6px";
-    this.toastEl.style.alignItems = "center";
-    this.toastEl.style.pointerEvents = "none";
-    document.body.appendChild(this.toastEl);
+    Object.assign(this.toastEl.style, {
+      gridArea: "toast",
+      justifySelf: "center",
+      alignSelf: "start",
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+      alignItems: "center",
+      pointerEvents: "none",
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.gridEl.appendChild(this.toastEl);
   }
 
   private setDomVisible(v: boolean) {
-    const d = v ? "block" : "none";
-    this.hudEl.style.display = d;
-    this.helpEl.style.display = d;
-    this.toastEl.style.display = v ? "flex" : "none";
+    this.gridEl.style.display = v ? "grid" : "none";
+  }
+
+  private bar(label: string, pct: number, color: string): string {
+    const w = Math.max(0, Math.min(100, pct));
+    return `<div style="margin-top:4px">${label}
+      <div style="height:10px;border:2px solid #2a2118;border-radius:5px;background:#e9dcbf;overflow:hidden;margin-top:2px">
+        <div style="height:100%;width:${w}%;background:${color}"></div>
+      </div></div>`;
   }
 
   private updateHud() {
     if (!this.player) return;
     const body = this.world.dominantBody(this.player.pos);
     const alt = this.world.altitudeAbove(this.player.pos, body);
-    const relV = V.len(V.sub(this.player.vel, body.vel));
+    const relVel = V.sub(this.player.vel, body.vel);
+    const speed = V.len(relVel);
+    const up = V.norm(V.sub(this.player.pos, body.pos));
+    const vSpeed = relVel.x * up.x + relVel.y * up.y; // +up / -down
     const orb = orbit(this.player.pos, this.player.vel, body);
     const fuelPct = this.player.liquidFuelMax > 0
       ? (this.player.liquidFuel / this.player.liquidFuelMax) * 100
       : 0;
-    const kinds = this.availableWeaponKinds();
-    const weapon = kinds.length ? kinds[this.weaponGroup % kinds.length].toUpperCase() : "—";
     const apo = orb.bound && isFinite(orb.apo) ? fmt(orb.apo - body.radius) : "—";
     const peri = isFinite(orb.peri) ? fmt(orb.peri - body.radius) : "—";
-    const nextStage = this.player.nextStageLabel();
-    this.hudEl.innerHTML = `
-      <h3>🛰 ${body.name}</h3>
+
+    this.navEl.innerHTML = `
+      <h3>🛰 ${body.name}${this.player.landed ? " · landed" : ""}</h3>
       <div>Altitude: <b>${fmt(alt)}</b></div>
-      <div>Speed: <b>${relV.toFixed(0)} m/s</b></div>
-      <div>Apo/Peri: <b>${apo}</b> / <b>${peri}</b></div>
-      <div>Throttle: <b>${(this.throttle * 100).toFixed(0)}%</b> · Fuel: <b>${fuelPct.toFixed(0)}%</b></div>
-      <div>Weapon: <b>${weapon}</b> · RCS: <b>${this.rcs ? "on" : "off"}</b> · Warp: <b>${this.warp}×</b></div>
-      <div>Stage ⎵: <b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b></div>
-    `;
+      <div>Speed: <b>${speed.toFixed(0)} m/s</b></div>
+      <div>Vertical: <b>${vSpeed >= 0 ? "▲" : "▼"} ${Math.abs(vSpeed).toFixed(0)} m/s</b></div>
+      <div>Apoapsis: <b>${apo}</b></div>
+      <div>Periapsis: <b>${peri}</b></div>`;
+
+    // gauges (throttle + fuel bars, RCS, next stage)
+    const nextStage = this.player.nextStageLabel();
+    const fuelColor = fuelPct < 15 ? "#c84b31" : "#d98a3d";
+    this.gaugesEl.innerHTML =
+      this.bar(`Throttle <b>${Math.round(this.throttle * 100)}%</b>`, this.throttle * 100, "#c84b31") +
+      this.bar(`Fuel <b>${Math.round(fuelPct)}%</b>`, fuelPct, fuelColor) +
+      `<div style="margin-top:6px">RCS: <b>${this.rcs ? "on" : "off"}</b></div>` +
+      `<div>Next stage ⎵: <b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b></div>`;
+
+    // status (warp + weapon group chips)
+    const kinds = this.availableWeaponKinds();
+    const chips = kinds.length
+      ? kinds.map((k, i) => {
+          const on = i === this.weaponGroup % kinds.length;
+          return `<span data-wg="${i}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${k}</span>`;
+        }).join("")
+      : "<span style='opacity:0.6'>none</span>";
+    this.statusEl.innerHTML = `
+      <h3>⚙ Status</h3>
+      <div>Warp: <b>${this.warp}×</b></div>
+      <div style="margin-top:4px">Weapon (Tab):</div>
+      <div>${chips}</div>`;
+    // wire chip clicks to select the weapon group
+    this.statusEl.querySelectorAll<HTMLSpanElement>("span[data-wg]").forEach((el) => {
+      el.onclick = () => { this.weaponGroup = Number(el.dataset.wg); };
+    });
+  }
+
+  // Compact attitude indicator: top of the ball is "up" (away from the body);
+  // shows the craft heading and the prograde marker so you can fly a gravity turn.
+  private drawNavball() {
+    const g = this.gNav;
+    g.clear();
+    if (!this.player || this.mapMode) return;
+    const cx = this.cam.screenW / 2;
+    const cy = this.cam.screenH - 58;
+    const R = 38;
+    const body = this.world.dominantBody(this.player.pos);
+    const up = V.norm(V.sub(this.player.pos, body.pos)); // radial out (world)
+    const baseAng = Math.atan2(up.y, up.x);
+    // ball: sky top, ground bottom
+    g.poly(circlePoints(cx, cy, R));
+    g.fill({ color: 0x7fb6e0 });
+    g.stroke({ color: 0x2a2118, width: 2 });
+    // ground half (toward the body = bottom of the ball)
+    const ground: number[] = [cx - R, cy, cx + R, cy];
+    for (let i = 0; i <= 16; i++) { const a = Math.PI * (i / 16); ground.push(cx + Math.cos(a) * R, cy + Math.sin(a) * R); }
+    g.poly(ground);
+    g.fill({ color: 0x5b8c4a, alpha: 0.9 });
+    g.poly(circlePoints(cx, cy, R));
+    g.stroke({ color: 0x2a2118, width: 2 });
+
+    const marker = (worldDir: Vec2) => {
+      const rel = Math.atan2(worldDir.y, worldDir.x) - baseAng;
+      return { x: cx - Math.sin(rel) * R, y: cy - Math.cos(rel) * R };
+    };
+    // prograde
+    const vRel = V.sub(this.player.vel, body.vel);
+    if (V.len(vRel) > 1) {
+      const m = marker(V.norm(vRel));
+      g.circle(m.x, m.y, 4.5);
+      g.stroke({ color: 0xd98a3d, width: 2.5 });
+    }
+    // craft heading arrow (from centre)
+    const cf = this.player.upDir();
+    const m = marker(cf);
+    g.moveTo(cx, cy);
+    g.lineTo(m.x, m.y);
+    g.stroke({ color: 0xc84b31, width: 3, cap: "round" });
+    g.circle(m.x, m.y, 3);
+    g.fill({ color: 0xc84b31 });
+    // centre hub
+    g.circle(cx, cy, 2.5);
+    g.fill({ color: 0x2a2118 });
   }
 
   private toastOnce(key: string, msg: string) {
@@ -705,6 +821,7 @@ export class FlightScene {
 
   private toast(msg: string) {
     const el = mkPanel();
+    el.style.position = "relative"; // flow inside the toast flex column
     el.style.fontSize = "15px";
     el.style.opacity = "1";
     el.style.transition = "opacity 0.6s, transform 0.6s";
