@@ -89,8 +89,8 @@ export class Combat {
     const cannon = spec.kind === "cannon";
     this.projectiles.push({
       pos: { ...origin },
-      vel: V.add(ownerVel, V.scale(dir, cannon ? spec.speed : spec.speed * 0.4)),
-      life: cannon ? 6 : 8,
+      vel: V.add(ownerVel, V.scale(dir, cannon ? spec.speed : spec.speed * 0.5)),
+      life: cannon ? 4 : 11,
       damage: spec.damage,
       kind: cannon ? "cannon" : "missile",
       ownerId,
@@ -144,13 +144,27 @@ export class Combat {
         pr.alive = false;
         continue;
       }
+      const pbody = world.dominantBody(pr.pos);
       if (pr.kind === "cannon") {
-        pr.vel = V.add(pr.vel, V.scale(world.gravityAt(pr.pos), dt));
+        // ballistic: gravity + the body's frame accel so it arcs correctly in
+        // the planet's frame (co-moving), like a real lobbed shell
+        pr.vel = V.add(pr.vel, V.scale(V.add(world.gravityAt(pr.pos, pbody), world.bodyFrameAccel(pbody)), dt));
       } else {
-        // missile keeps accelerating along its facing
-        const dir = V.norm(pr.vel);
-        pr.vel = V.add(pr.vel, V.scale(dir, 120 * dt));
-        if (Math.random() < 0.6) fx.puff(pr.pos, V.scale(dir, -20), 0xff8a3d);
+        // missile: guided rocket. Thrust hard toward the target so it flies
+        // there regardless of gravity (steered relative to the planet).
+        let desired: Vec2;
+        if (pr.targetRel && pr.targetBody) {
+          const tb = world.get(pr.targetBody);
+          desired = V.norm(V.sub(V.add(tb.pos, pr.targetRel), pr.pos));
+        } else {
+          desired = V.norm(V.sub(pr.vel, pbody.vel));
+        }
+        pr.vel = V.add(pr.vel, V.scale(desired, 420 * dt));
+        // cap speed relative to the planet so it stays controllable
+        const vRel = V.sub(pr.vel, pbody.vel);
+        const sp = V.len(vRel);
+        if (sp > 480) pr.vel = V.add(pbody.vel, V.scale(vRel, 480 / sp));
+        if (Math.random() < 0.7) fx.puff(pr.pos, V.scale(desired, -45), 0xff8a3d);
       }
       const step = V.scale(pr.vel, dt);
       const next = V.add(pr.pos, step);
