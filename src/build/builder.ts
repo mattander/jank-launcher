@@ -10,6 +10,7 @@ import {
   computeStats,
 } from "./design";
 import { computeStages } from "./staging";
+import { stockDesigns } from "./stock";
 import * as storage from "../storage";
 
 const CATEGORY_ORDER: PartCategory[] = [
@@ -190,6 +191,7 @@ export class Builder {
       this.actionsEl.appendChild(b);
     };
     mk("🚀 Launch", "primary", () => this.launch());
+    mk("📦 Stock", "", () => this.openStock());
     mk("💾 Save", "", () => this.save());
     mk("📂 Load", "", () => this.openLoad());
     mk("⬇ Export", "", () => storage.exportDesign(this.design));
@@ -224,6 +226,18 @@ export class Builder {
     this.design.name = name;
     storage.saveDesign(this.design);
     this.flashHint(`Saved "${name}"`);
+  }
+
+  private openStock() {
+    const designs = stockDesigns();
+    const names = designs.map((d) => d.name);
+    const pick = prompt(`Load a stock rocket?\n\n${names.join("\n")}`, names[0]);
+    if (!pick) return;
+    const found = designs.find((d) => d.name.toLowerCase() === pick.trim().toLowerCase());
+    if (!found) return this.flashHint(`No stock rocket "${pick}"`);
+    this.design = structuredClone(found);
+    this.render();
+    this.flashHint(`Loaded stock "${found.name}"`);
   }
 
   private openLoad() {
