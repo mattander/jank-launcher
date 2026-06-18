@@ -44,6 +44,7 @@ export class Builder {
   private symmetry = 1; // 1 = off, 2 = mirror
 
   // DOM
+  private gridEl!: HTMLDivElement;
   private paletteEl!: HTMLDivElement;
   private statsEl!: HTMLDivElement;
   private actionsEl!: HTMLDivElement;
@@ -87,52 +88,71 @@ export class Builder {
   }
 
   // ---------------- DOM ----------------
+  // A full-screen CSS-grid overlay holds the panels in named areas; empty cells
+  // are pointer-events:none so clicks pass through to the canvas underneath.
   private buildDom() {
-    // palette (left)
+    this.gridEl = document.createElement("div");
+    Object.assign(this.gridEl.style, {
+      position: "fixed",
+      inset: "0",
+      display: "grid",
+      padding: "12px",
+      gap: "10px",
+      gridTemplateColumns: "auto 1fr auto",
+      gridTemplateRows: "auto 1fr auto",
+      gridTemplateAreas: `"palette hint actions" "palette . ." "stats . staging"`,
+      pointerEvents: "none",
+    } satisfies Partial<CSSStyleDeclaration>);
+    document.body.appendChild(this.gridEl);
+
+    const inGrid = (el: HTMLDivElement, area: string, justify = "stretch", align = "start") => {
+      el.style.gridArea = area;
+      el.style.justifySelf = justify;
+      el.style.alignSelf = align;
+      el.style.pointerEvents = "auto";
+      this.gridEl.appendChild(el);
+    };
+
+    // palette (left column, top)
     this.paletteScaffold();
+    inGrid(this.paletteEl, "palette", "start", "start");
+
     // stats (bottom-left)
     this.statsEl = div("panel");
-    this.statsEl.style.left = "12px";
-    this.statsEl.style.bottom = "12px";
     this.statsEl.style.minWidth = "230px";
-    document.body.appendChild(this.statsEl);
+    inGrid(this.statsEl, "stats", "start", "end");
+
     // actions (top-right)
     this.actionsEl = div("panel");
-    this.actionsEl.style.right = "12px";
-    this.actionsEl.style.top = "12px";
     this.actionsEl.style.display = "flex";
     this.actionsEl.style.flexWrap = "wrap";
+    this.actionsEl.style.justifyContent = "flex-end";
     this.actionsEl.style.gap = "6px";
-    this.actionsEl.style.maxWidth = "320px";
-    document.body.appendChild(this.actionsEl);
+    this.actionsEl.style.width = "292px";
+    inGrid(this.actionsEl, "actions", "end", "start");
     this.renderActions();
-    // staging stack (bottom-right, clear of the top-right actions)
+
+    // staging (bottom-right)
     this.stagingEl = div("panel");
-    this.stagingEl.style.right = "12px";
-    this.stagingEl.style.bottom = "12px";
     this.stagingEl.style.width = "230px";
     this.stagingEl.style.maxHeight = "42vh";
     this.stagingEl.style.overflowY = "auto";
     this.stagingEl.style.fontSize = "13px";
-    document.body.appendChild(this.stagingEl);
+    inGrid(this.stagingEl, "staging", "end", "end");
+
     // hint (top-center)
     this.hintEl = div("panel");
-    this.hintEl.style.left = "calc(252px + (100vw - 252px - 340px) / 2)"; // centred in the open area between palette and actions
-    this.hintEl.style.top = "12px";
-    this.hintEl.style.transform = "translateX(-50%)";
     this.hintEl.style.fontSize = "12px";
-    this.hintEl.style.maxWidth = "440px";
+    this.hintEl.style.maxWidth = "460px";
     this.hintEl.style.textAlign = "center";
     this.hintEl.textContent = Builder.HINT;
-    document.body.appendChild(this.hintEl);
+    inGrid(this.hintEl, "hint", "center", "start");
   }
 
   private paletteScaffold() {
     this.paletteEl = div("panel");
-    this.paletteEl.style.left = "12px";
-    this.paletteEl.style.top = "12px";
     this.paletteEl.style.width = "240px";
-    this.paletteEl.style.maxHeight = "calc(100vh - 220px)";
+    this.paletteEl.style.maxHeight = "100%";
     this.paletteEl.style.overflowY = "auto";
     const title = document.createElement("h3");
     title.textContent = "🚀 Parts Bin";
@@ -158,7 +178,6 @@ export class Builder {
       }
       this.paletteEl.appendChild(grid);
     }
-    document.body.appendChild(this.paletteEl);
   }
 
   private renderActions() {
@@ -242,12 +261,7 @@ export class Builder {
   }
 
   private setDomVisible(v: boolean) {
-    const d = v ? "block" : "none";
-    this.paletteEl.style.display = d;
-    this.statsEl.style.display = d;
-    this.actionsEl.style.display = v ? "flex" : "none";
-    this.hintEl.style.display = d;
-    this.stagingEl.style.display = d;
+    this.gridEl.style.display = v ? "grid" : "none";
   }
 
   // ---------------- placing / snapping ----------------
