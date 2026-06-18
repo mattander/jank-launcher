@@ -1,7 +1,7 @@
 import { Application, Container, Graphics } from "pixi.js";
 import { Camera, REF_PPM } from "../camera";
 import { Vec2 } from "../types";
-import { PARTS, PartDef, drawPart, getPart, PartCategory } from "../parts/catalog";
+import { PARTS, PartDef, drawPart, drawFairingShroud, getPart, PartCategory } from "../parts/catalog";
 import {
   Design,
   PlacedPart,
@@ -482,13 +482,33 @@ export class Builder {
     c.scale.set(flip ? -k : k, k);
   }
 
+  // Engines that sit directly under an adjacent decoupler get an auto-fairing.
+  private fairingEngines(): Set<string> {
+    const set = new Set<string>();
+    const parts = this.design.parts;
+    for (const p of parts) {
+      const def = getPart(p.defId);
+      if (!def.thrust || def.solid || !def.nodes.some((n) => n.type === "stack")) continue;
+      const covered = parts.some((q) => {
+        const qd = getPart(q.defId);
+        if (!qd.decoupler || !qd.nodes.some((n) => n.type === "stack")) return false; // stack decoupler only
+        const adjacent = q.parentUid === p.uid || p.parentUid === q.uid;
+        return adjacent && Math.abs(q.x - p.x) < 0.6; // stacked in line with the engine
+      });
+      if (covered) set.add(p.uid);
+    }
+    return set;
+  }
+
   render() {
     this.drawGuides();
     this.partsLayer.removeChildren();
+    const fairings = this.fairingEngines();
     for (const p of this.design.parts) {
       const def = getPart(p.defId);
       const g = new Graphics();
       drawPart(g, def, REF_PPM);
+      if (fairings.has(p.uid)) drawFairingShroud(g, def, REF_PPM);
       this.placePartContainer(g, p.x, p.y, p.flip);
       this.partsLayer.addChild(g);
     }

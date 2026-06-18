@@ -510,6 +510,22 @@ export class Vessel {
     return this.parts.filter((p) => p.alive);
   }
 
+  // Engines with an adjacent decoupler above them (toward +ly) — get a fairing.
+  fairingUids(): Set<string> {
+    const set = new Set<string>();
+    for (const p of this.parts) {
+      if (!p.alive || !p.def.thrust || p.def.solid || !p.def.nodes.some((n) => n.type === "stack")) continue;
+      for (const n of this.adj.get(p.uid) ?? []) {
+        const q = this.parts.find((x) => x.uid === n && x.alive);
+        if (q && q.def.decoupler && q.def.nodes.some((nn) => nn.type === "stack") && Math.abs(q.lx - p.lx) < 0.6) {
+          set.add(p.uid);
+          break;
+        }
+      }
+    }
+    return set;
+  }
+
   // What the next Space press will do (mirrors doStage), for the HUD.
   nextStageLabel(): string | null {
     let target: PartInstance | null = null;

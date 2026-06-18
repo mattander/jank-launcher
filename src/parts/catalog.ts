@@ -130,7 +130,8 @@ export const PARTS: PartDef[] = [
     blurb: "Big dumb thrust. Gimbals for steering.",
     width: 2.2, height: 1.8, mass: 0.6, color: C.dark, shape: "engine",
     thrust: 190, fuelBurn: 9, gimbal: true,
-    nodes: [{ x: 0, y: 0.9, type: "stack" }],
+    // bottom node lets you stack a decoupler + lower stage below it (interstage)
+    nodes: [{ x: 0, y: 0.9, type: "stack" }, { x: 0, y: -0.9, type: "stack" }],
   },
   {
     id: "engine-small",
@@ -139,7 +140,7 @@ export const PARTS: PartDef[] = [
     blurb: "Efficient little vacuum poker.",
     width: 1.3, height: 1.3, mass: 0.25, color: C.dark, shape: "engine",
     thrust: 70, fuelBurn: 3.4, gimbal: true,
-    nodes: [{ x: 0, y: 0.65, type: "stack" }],
+    nodes: [{ x: 0, y: 0.65, type: "stack" }, { x: 0, y: -0.65, type: "stack" }],
   },
   {
     id: "engine-radial",
@@ -463,6 +464,31 @@ export function drawPart(g: Graphics, def: PartDef, pxPerM: number) {
     default:
       sketchBox(g, hw, hh, { ...base, fill: def.color });
   }
+}
+
+// A smooth interstage shroud that covers an engine sitting under a decoupler.
+// Drawn in the same local pixel space as the engine (nose toward -y).
+export function drawFairingShroud(g: Graphics, def: PartDef, pxPerM: number) {
+  const w = def.width * pxPerM;
+  const h = def.height * pxPerM;
+  const hw = w / 2;
+  const hh = h / 2;
+  const lw = Math.max(1.5, pxPerM * 0.12);
+  const seed = hashId(def.id) + 99;
+  // tapers inward toward the bottom, hiding the engine bell inside a smooth cone
+  sketchPoly(
+    g,
+    [
+      [-hw * 0.82, -hh],
+      [hw * 0.82, -hh],
+      [hw * 0.42, hh],
+      [-hw * 0.42, hh],
+    ],
+    { fill: 0xcabfa3, stroke: INK, lineWidth: lw, seed, jitter: Math.min(2, pxPerM * 0.1) },
+  );
+  // a couple of seam lines so it reads as a shroud, not a bigger engine
+  sketchLine(g, [[-hw * 0.62, -hh * 0.4], [-hw * 0.42, hh]], { stroke: INK, lineWidth: lw * 0.5, seed: seed + 1 });
+  sketchLine(g, [[hw * 0.62, -hh * 0.4], [hw * 0.42, hh]], { stroke: INK, lineWidth: lw * 0.5, seed: seed + 2 });
 }
 
 function hashId(s: string): number {

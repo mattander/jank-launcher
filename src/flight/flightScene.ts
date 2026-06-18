@@ -2,7 +2,7 @@ import { Application, Container, Graphics } from "pixi.js";
 import { Camera, REF_PPM } from "../camera";
 import { Vec2, V } from "../types";
 import { Design } from "../build/design";
-import { drawPart, WeaponSpec } from "../parts/catalog";
+import { drawPart, drawFairingShroud, WeaponSpec } from "../parts/catalog";
 import { World, Body } from "./world";
 import { Vessel, assembleVessel, VesselInput } from "./vessel";
 import { Combat } from "./weapons";
@@ -24,6 +24,7 @@ export class FlightScene {
   private gAim = new Graphics();
   private gMap = new Graphics();
   private partSprites = new Map<string, Graphics>();
+  private fairingSprites = new Map<string, Graphics>();
 
   cam = new Camera();
   world = new World();
@@ -68,6 +69,8 @@ export class FlightScene {
     this.vessels = [];
     this.partSprites.forEach((s) => s.destroy());
     this.partSprites.clear();
+    this.fairingSprites.forEach((s) => s.destroy());
+    this.fairingSprites.clear();
     this.combat = new Combat();
     this.fx = new Particles();
     this.fx.onBoom = (size) => {
@@ -401,11 +404,15 @@ export class FlightScene {
 
   private hideAllSprites() {
     this.partSprites.forEach((s) => (s.visible = false));
+    this.fairingSprites.forEach((s) => (s.visible = false));
   }
 
   private drawVessels() {
     const used = new Set<string>();
+    const usedFairings = new Set<string>();
+    const k = this.cam.zoom / REF_PPM;
     for (const v of this.vessels) {
+      const fairings = v.fairingUids();
       for (const p of v.aliveParts()) {
         let sp = this.partSprites.get(p.uid);
         if (!sp) {
@@ -418,16 +425,36 @@ export class FlightScene {
         const s = this.cam.worldToScreen(w);
         sp.position.set(s.x, s.y);
         sp.rotation = -v.angle;
-        const k = this.cam.zoom / REF_PPM;
         sp.scale.set(p.flip ? -k : k, k);
         sp.visible = true;
         used.add(p.uid);
+
+        if (fairings.has(p.uid)) {
+          let fs = this.fairingSprites.get(p.uid);
+          if (!fs) {
+            fs = new Graphics();
+            drawFairingShroud(fs, p.def, REF_PPM);
+            this.vesselsLayer.addChild(fs);
+            this.fairingSprites.set(p.uid, fs);
+          }
+          fs.position.set(s.x, s.y);
+          fs.rotation = -v.angle;
+          fs.scale.set(p.flip ? -k : k, k);
+          fs.visible = true;
+          usedFairings.add(p.uid);
+        }
       }
     }
     for (const [uid, sp] of this.partSprites) {
       if (!used.has(uid)) {
         sp.destroy();
         this.partSprites.delete(uid);
+      }
+    }
+    for (const [uid, fs] of this.fairingSprites) {
+      if (!usedFairings.has(uid)) {
+        fs.destroy();
+        this.fairingSprites.delete(uid);
       }
     }
   }
