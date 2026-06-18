@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { World } from "./world";
-import { orbit, conicPath } from "./orbit";
+import { orbit, conicPath, orbitTiming } from "./orbit";
 
 describe("orbit (Keplerian elements)", () => {
   const world = new World();
@@ -55,5 +55,34 @@ describe("orbit (Keplerian elements)", () => {
     const pos = { x: terra.pos.x, y: terra.pos.y + r };
     const vel = { x: terra.vel.x, y: terra.vel.y }; // no tangential velocity
     expect(conicPath(pos, vel, terra)).toBeNull();
+  });
+});
+
+describe("orbitTiming", () => {
+  const world = new World();
+  const terra = world.get("terra");
+  const r = terra.radius + 100000;
+  const vc = Math.sqrt(terra.GM / r);
+
+  it("gives a period and no apsis timing for a circular orbit", () => {
+    const t = orbitTiming({ x: terra.pos.x, y: terra.pos.y + r }, { x: terra.vel.x + vc, y: terra.vel.y }, terra);
+    expect(t.toApo).toBeNull();
+    expect(t.toPeri).toBeNull();
+    expect(t.period).toBeCloseTo(2 * Math.PI * Math.sqrt(r ** 3 / terra.GM), -2);
+  });
+
+  it("at periapsis, apoapsis is ~half a period away", () => {
+    // tangential burn faster than circular -> this point is periapsis
+    const t = orbitTiming({ x: terra.pos.x, y: terra.pos.y + r }, { x: terra.vel.x + vc * 1.15, y: terra.vel.y }, terra);
+    expect(t.period).toBeGreaterThan(0);
+    expect(t.toApo!).toBeCloseTo(t.period! / 2, -1);
+    expect(t.toPeri!).toBeLessThan(t.period! * 0.02); // we're basically at periapsis
+  });
+
+  it("returns nulls on an escape trajectory", () => {
+    const vesc = Math.sqrt(2) * vc;
+    const t = orbitTiming({ x: terra.pos.x, y: terra.pos.y + r }, { x: terra.vel.x + vesc * 1.1, y: terra.vel.y }, terra);
+    expect(t.toApo).toBeNull();
+    expect(t.period).toBeNull();
   });
 });

@@ -28,6 +28,44 @@ export function orbit(pos: Vec2, vel: Vec2, body: Body): Orbit {
   return { apo: Infinity, peri, ecc, bound: false };
 }
 
+const TAU = Math.PI * 2;
+const mod2pi = (x: number) => ((x % TAU) + TAU) % TAU;
+
+// Time (seconds) until the craft next reaches apoapsis / periapsis, and the
+// orbital period. Null for unbound or near-circular orbits (no meaningful apsis).
+export function orbitTiming(
+  pos: Vec2,
+  vel: Vec2,
+  body: Body,
+): { toApo: number | null; toPeri: number | null; period: number | null } {
+  const r = V.sub(pos, body.pos);
+  const v = V.sub(vel, body.vel);
+  const rl = V.len(r) || 1;
+  const GM = body.GM;
+  const energy = V.len2(v) / 2 - GM / rl;
+  if (energy >= 0) return { toApo: null, toPeri: null, period: null }; // unbound
+  const a = -GM / (2 * energy);
+  const rv = r.x * v.x + r.y * v.y;
+  const c = V.len2(v) - GM / rl;
+  const ex = (c * r.x - rv * v.x) / GM;
+  const ey = (c * r.y - rv * v.y) / GM;
+  const e = Math.hypot(ex, ey);
+  const n = Math.sqrt(GM / (a * a * a)); // mean motion
+  const period = TAU / n;
+  if (e < 1e-4) return { toApo: null, toPeri: null, period }; // circular
+
+  // true anomaly -> eccentric -> mean anomaly
+  let nu = Math.acos(Math.max(-1, Math.min(1, (ex * r.x + ey * r.y) / (e * rl))));
+  if (rv < 0) nu = TAU - nu; // descending toward periapsis
+  const E = Math.atan2(Math.sqrt(1 - e * e) * Math.sin(nu), e + Math.cos(nu));
+  const M = mod2pi(E - e * Math.sin(E));
+  return {
+    toApo: mod2pi(Math.PI - M) / n,
+    toPeri: mod2pi(-M) / n,
+    period,
+  };
+}
+
 // Sample the Keplerian conic (relative to `body`) into world-space points, plus
 // apoapsis/periapsis markers. Returns null for degenerate/near-radial orbits.
 export function conicPath(

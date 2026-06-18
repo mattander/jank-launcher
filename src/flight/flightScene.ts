@@ -4,7 +4,7 @@ import { Vec2, V } from "../types";
 import { Design } from "../build/design";
 import { drawPart, drawFairingShroud, WeaponSpec } from "../parts/catalog";
 import { World } from "./world";
-import { orbit, conicPath } from "./orbit";
+import { orbit, conicPath, orbitTiming } from "./orbit";
 import { Vessel, assembleVessel, VesselInput } from "./vessel";
 import { Combat } from "./weapons";
 import { Particles } from "./fx";
@@ -39,6 +39,7 @@ export class FlightScene {
   private keys = new Set<string>();
   private throttle = 0;
   private rcs = false;
+  private sas: "off" | "prograde" | "retrograde" | "hold" = "off";
   private stageEdge = false;
   private firing = false;
   private aimScreen: Vec2 = { x: 0, y: 0 };
@@ -88,6 +89,7 @@ export class FlightScene {
     this.warp = 1;
     this.throttle = 0;
     this.weaponGroup = 0;
+    this.sas = "off";
 
     const v = assembleVessel(design);
     this.player = v;
@@ -162,6 +164,7 @@ export class FlightScene {
       if (k === "f") this.firing = true;
       if (k === "tab") { this.cycleWeapon(); e.preventDefault(); }
       if (k === "r") this.rcs = !this.rcs;
+      if (k === "t") this.cycleSas();
       if (k === "m") this.toggleMap();
       if (k === "n") this.toast(this.audio.toggleMute() ? "🔇 Muted" : "🔊 Sound on");
       if (k === ",") this.warp = Math.max(1, this.warp / 2);
@@ -171,6 +174,33 @@ export class FlightScene {
     }
     if (down) this.keys.add(k);
     else this.keys.delete(k);
+  }
+
+  private cycleSas() {
+    const order = ["off", "prograde", "retrograde", "hold"] as const;
+    this.sas = order[(order.indexOf(this.sas) + 1) % order.length];
+    this.toast(`SAS: ${this.sas === "off" ? "off" : this.sas}`);
+  }
+
+  // Autopilot rotation input toward the held attitude, or null if SAS is off /
+  // has nothing to point at. Manual A/D always overrides this.
+  private sasRotate(): number | null {
+    if (this.sas === "off" || !this.player) return null;
+    const p = this.player;
+    if (this.sas === "hold") {
+      // kill rotation / hold current heading
+      return clamp(-p.angVel * 4, -1, 1);
+    }
+    const body = this.world.dominantBody(p.pos);
+    const vRel = V.sub(p.vel, body.vel);
+    if (V.len(vRel) < 1) return null; // no prograde defined
+    let dir = V.norm(vRel);
+    if (this.sas === "retrograde") dir = V.scale(dir, -1);
+    const desired = Math.atan2(-dir.x, dir.y); // angle whose upDir == dir
+    let err = desired - p.angle;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    return clamp(err * 3 - p.angVel * 1.5, -1, 1); // PD controller
   }
 
   private cycleWeapon() {
@@ -212,7 +242,11 @@ export class FlightScene {
     if (this.keys.has("s")) this.throttle = Math.max(0, this.throttle - frameDt * 0.8);
     if (this.keys.has("shift")) this.throttle = 1;
     if (this.keys.has("control")) this.throttle = 0;
-    const rotate = (this.keys.has("a") ? 1 : 0) - (this.keys.has("d") ? 1 : 0);
+    let rotate = (this.keys.has("a") ? 1 : 0) - (this.keys.has("d") ? 1 : 0);
+    if (rotate === 0) {
+      const sasInput = this.sasRotate(); // SAS holds attitude when not steering by hand
+      if (sasInput !== null) rotate = sasInput;
+    }
 
     // physics substepping (also drives time warp)
     const subDt = 1 / 120;
@@ -684,7 +718,7 @@ export class FlightScene {
     this.helpEl.style.lineHeight = "1.6";
     this.helpEl.innerHTML =
       "<b>A/D</b> rotate · <b>W/S</b> throttle · <b>Shift/Ctrl</b> full/cut · " +
-      "<b>Space</b> stage · <b>R</b> RCS · <b>Mouse</b> aim · <b>Click/F</b> fire · " +
+      "<b>T</b> SAS · <b>Space</b> stage · <b>R</b> RCS · <b>Mouse</b> aim · <b>Click/F</b> fire · " +
       "<b>Tab</b> weapon · <b>M</b> map · <b>,/.</b> warp · <b>N</b> mute · <b>Esc</b> hangar";
     inGrid(this.helpEl, "help", "end", "end");
 
@@ -728,14 +762,17 @@ export class FlightScene {
       : 0;
     const apo = orb.bound && isFinite(orb.apo) ? fmt(orb.apo - body.radius) : "—";
     const peri = isFinite(orb.peri) ? fmt(orb.peri - body.radius) : "—";
+    const t = orbitTiming(this.player.pos, this.player.vel, body);
+    const tApo = t.toApo != null ? ` <span style="opacity:0.7">T-${fmtTime(t.toApo)}</span>` : "";
+    const tPeri = t.toPeri != null ? ` <span style="opacity:0.7">T-${fmtTime(t.toPeri)}</span>` : "";
 
     this.navEl.innerHTML = `
       <h3>🛰 ${body.name}${this.player.landed ? " · landed" : ""}</h3>
       <div>Altitude: <b>${fmt(alt)}</b></div>
       <div>Speed: <b>${speed.toFixed(0)} m/s</b></div>
       <div>Vertical: <b>${vSpeed >= 0 ? "▲" : "▼"} ${Math.abs(vSpeed).toFixed(0)} m/s</b></div>
-      <div>Apoapsis: <b>${apo}</b></div>
-      <div>Periapsis: <b>${peri}</b></div>`;
+      <div>Apoapsis: <b>${apo}</b>${tApo}</div>
+      <div>Periapsis: <b>${peri}</b>${tPeri}</div>`;
 
     // gauges (throttle + fuel bars, RCS, next stage)
     const nextStage = this.player.nextStageLabel();
@@ -754,14 +791,29 @@ export class FlightScene {
           return `<span data-wg="${i}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${k}</span>`;
         }).join("")
       : "<span style='opacity:0.6'>none</span>";
+    const sasModes: (typeof this.sas)[] = ["off", "prograde", "retrograde", "hold"];
+    const sasLabel: Record<typeof this.sas, string> = {
+      off: "off", prograde: "prograde", retrograde: "retrograde", hold: "hold",
+    };
+    const sasChips = sasModes
+      .map((m) => {
+        const on = m === this.sas;
+        return `<span data-sas="${m}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${sasLabel[m]}</span>`;
+      })
+      .join("");
     this.statusEl.innerHTML = `
       <h3>⚙ Status</h3>
       <div>Warp: <b>${this.warp}×</b></div>
+      <div style="margin-top:4px">SAS (T):</div>
+      <div>${sasChips}</div>
       <div style="margin-top:4px">Weapon (Tab):</div>
       <div>${chips}</div>`;
-    // wire chip clicks to select the weapon group
+    // wire chip clicks
     this.statusEl.querySelectorAll<HTMLSpanElement>("span[data-wg]").forEach((el) => {
       el.onclick = () => { this.weaponGroup = Number(el.dataset.wg); };
+    });
+    this.statusEl.querySelectorAll<HTMLSpanElement>("span[data-sas]").forEach((el) => {
+      el.onclick = () => { this.sas = el.dataset.sas as typeof this.sas; };
     });
   }
 
@@ -845,6 +897,20 @@ function fmt(m: number): string {
   if (a >= 1e6) return (m / 1e6).toFixed(2) + " Mm";
   if (a >= 1000) return (m / 1000).toFixed(2) + " km";
   return m.toFixed(0) + " m";
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function fmtTime(s: number): string {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m${String(sec).padStart(2, "0")}s`;
+  return `${sec}s`;
 }
 
 // Fixed-segment circle as a flat point array. Bounded cost regardless of radius
