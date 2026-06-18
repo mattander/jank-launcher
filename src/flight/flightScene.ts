@@ -116,7 +116,10 @@ export class FlightScene {
   }
 
   resize() {
-    this.cam.resize(this.app.renderer.width, this.app.renderer.height);
+    // app.screen is the LOGICAL (CSS-pixel) size; renderer.width is physical
+    // (resolution-scaled). The stage and mouse coords are logical, so the camera
+    // must use logical size or everything mis-centers on HiDPI/Retina displays.
+    this.cam.resize(this.app.screen.width, this.app.screen.height);
   }
 
   // ---------------- input ----------------

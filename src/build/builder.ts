@@ -75,7 +75,8 @@ export class Builder {
   }
 
   resize() {
-    this.cam.resize(this.app.renderer.width, this.app.renderer.height);
+    // logical size, not renderer.width (physical) — see FlightScene.resize
+    this.cam.resize(this.app.screen.width, this.app.screen.height);
     this.render();
   }
 
