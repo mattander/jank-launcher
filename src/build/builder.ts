@@ -41,6 +41,7 @@ export class Builder {
   private panning = false;
   private lastPointer: Vec2 = { x: 0, y: 0 };
   private cursorWorld: Vec2 = { x: 0, y: 0 };
+  private symmetry = 1; // 1 = off, 2 = mirror
 
   // DOM
   private paletteEl!: HTMLDivElement;
@@ -58,6 +59,11 @@ export class Builder {
     this.cam.zoom = 16;
     this.buildDom();
     this.bindEvents();
+    if (import.meta.env.DEV) {
+      const w = window as unknown as { __builder: Builder; __PARTS: typeof PARTS };
+      w.__builder = this;
+      w.__PARTS = PARTS;
+    }
   }
 
   // ---------------- lifecycle ----------------
@@ -103,7 +109,7 @@ export class Builder {
     // staging stack (right side, below actions)
     this.stagingEl = div("panel");
     this.stagingEl.style.right = "12px";
-    this.stagingEl.style.top = "112px";
+    this.stagingEl.style.top = "156px";
     this.stagingEl.style.width = "210px";
     this.stagingEl.style.fontSize = "13px";
     document.body.appendChild(this.stagingEl);
@@ -176,6 +182,18 @@ export class Builder {
       this.design = emptyDesign();
       this.render();
     });
+    const symBtn = document.createElement("button");
+    symBtn.textContent = this.symmetry === 2 ? "⧉ Symmetry: 2×" : "⧉ Symmetry: off";
+    if (this.symmetry === 2) symBtn.className = "toggled";
+    symBtn.title = "Mirror side-mounted parts (X)";
+    symBtn.onclick = () => this.toggleSymmetry();
+    this.actionsEl.appendChild(symBtn);
+  }
+
+  private toggleSymmetry() {
+    this.symmetry = this.symmetry === 2 ? 1 : 2;
+    this.renderActions();
+    this.flashHint(this.symmetry === 2 ? "Symmetry ON — side parts mirror" : "Symmetry off");
   }
 
   private save() {
@@ -240,66 +258,60 @@ export class Builder {
     this.ghost = null;
   }
 
-  private isRadial(def: PartDef): boolean {
-    return !def.nodes.some((n) => n.type === "stack");
-  }
-
   private nodeWorld(p: PlacedPart, n: { x: number; y: number }): Vec2 {
     return { x: p.x + (p.flip ? -n.x : n.x), y: p.y + n.y };
   }
 
-  // Compute a snapped placement for `def` near the cursor.
+  // Compute a snapped placement for `def` near the cursor. Any part can attach
+  // two ways; we pick whichever attach point is closest to the cursor:
+  //   • stack  — align one of the part's stack nodes to a host node
+  //   • surface — mount the part to the side of a host (by its radial node if it
+  //     has one, otherwise by its own side edge — so tanks/SRBs work as boosters)
   private computeSnap(def: PartDef, ignoreUid?: string): NonNullable<typeof this.ghost> {
     const cur = this.cursorWorld;
     const others = this.design.parts.filter((p) => p.uid !== ignoreUid);
     if (others.length === 0) return { x: cur.x, y: cur.y, flip: false };
 
-    if (this.isRadial(def)) {
-      // attach the radial node onto the nearest host part's side
-      let host: PlacedPart | null = null;
-      let bestD = Infinity;
-      for (const e of others) {
-        const ed = getPart(e.defId);
-        const dx = Math.abs(cur.x - e.x) - ed.width / 2;
-        const dy = Math.abs(cur.y - e.y) - ed.height / 2;
-        const d = Math.hypot(Math.max(0, dx), Math.max(0, dy));
-        if (d < bestD) {
-          bestD = d;
-          host = e;
-        }
-      }
-      if (!host || bestD > 3) return { x: cur.x, y: cur.y, flip: false };
-      const hd = getPart(host.defId);
-      const side = cur.x < host.x ? -1 : 1; // -1 = host's left edge
-      const edgeX = host.x + (side * hd.width) / 2;
-      const ay = clamp(cur.y, host.y - hd.height * 0.45, host.y + hd.height * 0.45);
-      const n = def.nodes[0]; // radial node, n.x < 0 (body extends +x)
-      // attach to host's right side (side=1): body extends right, no flip
-      // attach to host's left side (side=-1): flip so body extends left
-      const flip = side < 0;
-      const nx = flip ? -n.x : n.x;
-      return { x: edgeX - nx, y: ay - n.y, flip, parentUid: host.uid };
-    }
+    type Cand = { x: number; y: number; flip: boolean; parentUid: string; dist: number };
+    const cands: Cand[] = [];
+    const offer = (attach: Vec2, gate: number, c: Omit<Cand, "dist">) => {
+      const dist = Math.hypot(attach.x - cur.x, attach.y - cur.y);
+      if (dist < gate) cands.push({ ...c, dist });
+    };
 
-    // stack part: align one of our stack nodes to any host node
-    let best: NonNullable<typeof this.ghost> | null = null;
-    let bestD = 1.8; // snap threshold (m)
-    const myStackNodes = def.nodes.filter((n) => n.type === "stack");
+    const myStack = def.nodes.filter((n) => n.type === "stack");
+    const myRadial = def.nodes.find((n) => n.type === "radial");
+
     for (const e of others) {
       const ed = getPart(e.defId);
+
+      // --- stack attach: my stack node -> any host node ---
       for (const hn of ed.nodes) {
         const target = this.nodeWorld(e, hn);
-        for (const gn of myStackNodes) {
-          const pos = { x: target.x - gn.x, y: target.y - gn.y };
-          const d = Math.hypot(pos.x - cur.x, pos.y - cur.y);
-          if (d < bestD) {
-            bestD = d;
-            best = { x: pos.x, y: pos.y, flip: false, parentUid: e.uid };
-          }
+        for (const gn of myStack) {
+          offer(target, 2.0, { x: target.x - gn.x, y: target.y - gn.y, flip: false, parentUid: e.uid });
         }
       }
+
+      // --- surface attach: mount to the nearest side of this host ---
+      const side = cur.x < e.x ? -1 : 1; // -1 = host's left edge
+      const edgeX = e.x + (side * ed.width) / 2;
+      const ay = clamp(cur.y, e.y - ed.height * 0.45, e.y + ed.height * 0.45);
+      const attach = { x: edgeX, y: ay };
+      if (myRadial) {
+        const flip = side < 0;
+        const nx = flip ? -myRadial.x : myRadial.x;
+        offer(attach, 3.0, { x: edgeX - nx, y: ay - myRadial.y, flip, parentUid: e.uid });
+      } else {
+        // no radial node: butt the part's near side against the host edge
+        offer(attach, 3.0, { x: edgeX + (side * def.width) / 2, y: ay, flip: false, parentUid: e.uid });
+      }
     }
-    return best ?? { x: cur.x, y: cur.y, flip: false };
+
+    if (cands.length === 0) return { x: cur.x, y: cur.y, flip: false };
+    cands.sort((a, b) => a.dist - b.dist);
+    const best = cands[0];
+    return { x: best.x, y: best.y, flip: best.flip, parentUid: best.parentUid };
   }
 
   // ---------------- events ----------------
@@ -309,6 +321,11 @@ export class Builder {
     c.addEventListener("pointerdown", (e) => this.onDown(e));
     window.addEventListener("pointerup", () => this.onUp());
     c.addEventListener("contextmenu", (e) => this.onContext(e));
+    window.addEventListener("keydown", (e) => {
+      if (!this.layer.visible) return;
+      if (e.key.toLowerCase() === "x") this.toggleSymmetry();
+      if (e.key === "Escape" && this.placing) { this.cancelPlacing(); this.render(); }
+    });
     c.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
   }
 
@@ -345,6 +362,35 @@ export class Builder {
     }
   }
 
+  // With symmetry on, mirror a side-mounted part across the rocket centreline.
+  // The mirror attaches to the host's own mirror when one exists (so a booster
+  // on a radial decoupler mirrors onto the decoupler on the far side).
+  private addMirror(part: PlacedPart) {
+    if (this.symmetry < 2 || !part.parentUid) return;
+    const host = this.design.parts.find((p) => p.uid === part.parentUid);
+    if (!host) return;
+    const root = this.design.parts.find((p) => getPart(p.defId).torque) ?? this.design.parts[0];
+    const axis = root ? root.x : 0;
+    if (Math.abs(part.x - axis) < 0.05) return; // on the centreline: nothing to mirror
+
+    // does the host have a mirror image already placed? attach to it if so
+    const hostMirror = this.design.parts.find(
+      (p) =>
+        p.uid !== host.uid &&
+        p.defId === host.defId &&
+        Math.abs(p.x - (2 * axis - host.x)) < 0.3 &&
+        Math.abs(p.y - host.y) < 0.3,
+    );
+    this.design.parts.push({
+      uid: newUid(),
+      defId: part.defId,
+      x: 2 * axis - part.x,
+      y: part.y,
+      flip: !part.flip,
+      parentUid: hostMirror ? hostMirror.uid : host.uid,
+    });
+  }
+
   private onDown(e: PointerEvent) {
     if (!this.layer.visible || e.button !== 0) return;
     this.cursorWorld = this.pointerWorld(e);
@@ -358,6 +404,7 @@ export class Builder {
         parentUid: this.ghost.parentUid,
       };
       this.design.parts.push(part);
+      this.addMirror(part);
       this.render();
       return;
     }
