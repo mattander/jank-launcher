@@ -129,6 +129,16 @@ Built:
 - Tests: Vitest (`npm test`). pixi.js is stubbed via `test/pixi-stub.ts` aliased
   in `vitest.config.ts` so logic modules import cleanly under Node. Suites cover
   types/world/orbit/design/staging/vessel.
+- Flight HUD: grid overlay (nav/status/gauges/help/toasts) + Pixi navball; nav
+  shows time-to-apo/peri; SAS hold (T: off/prograde/retrograde/hold) via PD
+  controller in flightScene.sasRotate().
+- FX: layered engine flame plumes (gFlame), exhaust smoke/embers, re-entry plasma
+  (Vessel.emitReentry); Particles has glow + grow + fireworks().
+- Combat sandbox: UFOs + enemy bolts + score/combo (Combat.onScore →
+  flightScene.addScore). 30 parts incl. vac engine, Thumper SRB, heat shield,
+  railgun, firework (WeaponSpec.festive).
+- Exploration: plant-a-flag on landing + visited log persisted via storage
+  loadLog/saveLog (key jank-launcher:log); flags drawn on the dominant body.
 
 ### Possible next steps / ideas (not yet done)
 - The builder Δv readout is single-stack (whole-rocket rocket equation); it
