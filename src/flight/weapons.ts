@@ -37,10 +37,37 @@ export interface Beam {
   hit: boolean;
 }
 
+export interface Ufo {
+  pos: Vec2;
+  wvel: Vec2; // wander velocity relative to the home body
+  home: Vec2; // home offset from Terra
+  radius: number;
+  hp: number;
+  maxHp: number;
+  alive: boolean;
+  wob: number;
+  seed: number;
+  fireCd: number;
+  flash: number; // hit flash 0..1
+}
+
+export interface Bolt {
+  pos: Vec2;
+  vel: Vec2;
+  life: number;
+  damage: number;
+  alive: boolean;
+}
+
+const SCORE = { asteroid: 100, blimp: 60, ufo: 300 } as const;
+
 export class Combat {
   projectiles: Projectile[] = [];
   targets: Target[] = [];
   beams: Beam[] = [];
+  ufos: Ufo[] = [];
+  bolts: Bolt[] = []; // enemy fire
+  onScore?: (points: number, pos: Vec2) => void;
 
   spawnSport(world: World) {
     const terra = world.get("terra");
@@ -76,6 +103,25 @@ export class Combat {
         alive: true,
         kind: "blimp",
         bob: Math.random() * Math.PI * 2,
+      });
+    }
+    // roaming UFOs to dogfight, scattered around Terra
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + 0.9;
+      const r = terra.radius + 20000 + Math.random() * 120000;
+      const off = V.fromAngle(ang, r);
+      this.ufos.push({
+        pos: V.add(terra.pos, off),
+        wvel: { x: 0, y: 0 },
+        home: off,
+        radius: 140,
+        hp: 70,
+        maxHp: 70,
+        alive: true,
+        wob: Math.random() * 10,
+        seed: Math.random() * 6,
+        fireCd: 2 + Math.random() * 3,
+        flash: 0,
       });
     }
   }
@@ -136,6 +182,65 @@ export class Combat {
     }
     this.targets = this.targets.filter((t) => t.alive);
 
+    // UFOs: wander near Terra (co-moving) and pot-shot the player
+    const terra = world.get("terra");
+    const player = vessels.find((v) => v.controllable);
+    for (const u of this.ufos) {
+      if (!u.alive) continue;
+      u.wob += dt;
+      u.flash = Math.max(0, u.flash - dt * 3);
+      const homeWorld = V.add(terra.pos, u.home);
+      let acc = V.scale(V.sub(homeWorld, u.pos), 0.02); // soft tether
+      acc = V.add(acc, { x: Math.sin(u.wob * 1.7 + u.seed) * 16, y: Math.cos(u.wob * 1.1 + u.seed) * 16 });
+      u.wvel = V.scale(V.add(u.wvel, V.scale(acc, dt)), 1 - dt * 0.4);
+      const sp = V.len(u.wvel);
+      if (sp > 150) u.wvel = V.scale(u.wvel, 150 / sp);
+      u.pos = V.add(u.pos, V.scale(V.add(terra.vel, u.wvel), dt));
+      u.fireCd -= dt;
+      if (player && u.fireCd <= 0) {
+        const d = V.sub(player.pos, u.pos);
+        if (V.len(d) < 8000) {
+          const dir = V.norm(d);
+          this.bolts.push({
+            pos: { ...u.pos },
+            vel: V.add(V.add(terra.vel, u.wvel), V.scale(dir, 340)),
+            life: 7,
+            damage: 7,
+            alive: true,
+          });
+          u.fireCd = 2.4 + Math.random() * 2.6;
+        } else {
+          u.fireCd = 1;
+        }
+      }
+    }
+    this.ufos = this.ufos.filter((u) => u.alive);
+
+    // enemy bolts: travel and damage the player on contact
+    for (const b of this.bolts) {
+      if (!b.alive) continue;
+      b.life -= dt;
+      if (b.life <= 0) { b.alive = false; continue; }
+      const next = V.add(b.pos, V.scale(b.vel, dt));
+      const body = world.dominantBody(next);
+      if (V.len(V.sub(next, body.pos)) < body.radius) { fx.explosion(next, 0.5); b.alive = false; continue; }
+      let hit = false;
+      for (const v of vessels) {
+        for (const p of v.aliveParts()) {
+          if (V.len(V.sub(next, v.partWorld(p))) < Math.max(p.def.width, p.def.height) * 0.6) {
+            v.damagePart(p, b.damage, fx);
+            fx.explosion(next, 0.7);
+            b.alive = false;
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      if (!hit) b.pos = next;
+    }
+    this.bolts = this.bolts.filter((b) => b.alive);
+
     // projectiles
     for (const pr of this.projectiles) {
       if (!pr.alive) continue;
@@ -175,10 +280,18 @@ export class Combat {
         this.detonate(pr, next, fx, vessels);
         continue;
       }
-      // direct hit on a target
+      // direct hit on a target or UFO
       let consumed = false;
       for (const t of this.targets) {
         if (t.alive && V.len(V.sub(next, t.pos)) < t.radius) {
+          this.detonate(pr, next, fx, vessels);
+          consumed = true;
+          break;
+        }
+      }
+      if (consumed) continue;
+      for (const u of this.ufos) {
+        if (u.alive && V.len(V.sub(next, u.pos)) < u.radius) {
           this.detonate(pr, next, fx, vessels);
           consumed = true;
           break;
@@ -225,6 +338,9 @@ export class Combat {
     for (const t of this.targets) {
       if (t.alive && V.len(V.sub(at, t.pos)) < blast + t.radius) this.hurtTarget(t, pr.damage, fx);
     }
+    for (const u of this.ufos) {
+      if (u.alive && V.len(V.sub(at, u.pos)) < blast + u.radius) this.hurtUfo(u, pr.damage, fx);
+    }
     for (const v of vessels) {
       if (v.id === pr.ownerId) continue;
       for (const p of v.aliveParts()) {
@@ -234,11 +350,24 @@ export class Combat {
     }
   }
 
+  private hurtUfo(u: Ufo, dmg: number, fx: Fx) {
+    if (!u.alive) return;
+    u.hp -= dmg;
+    u.flash = 1;
+    if (u.hp <= 0) {
+      u.alive = false;
+      fx.explosion(u.pos, 2.4);
+      fx.fireworks(u.pos, 1.2);
+      this.onScore?.(SCORE.ufo, u.pos);
+    }
+  }
+
   private hurtTarget(t: Target, dmg: number, fx: Fx) {
     t.hp -= dmg;
     if (t.hp <= 0) {
       t.alive = false;
       fx.explosion(t.pos, Math.min(4, t.radius / 250));
+      this.onScore?.(SCORE[t.kind], t.pos);
       // chunk into smaller asteroids occasionally
       if (t.kind === "asteroid" && t.radius > 600) {
         for (let i = 0; i < 2; i++) {
@@ -258,11 +387,12 @@ export class Combat {
   }
 
   private applyDamage(
-    hit: { kind: "target" | "vessel"; target?: Target; vessel?: Vessel; part?: PartInstance; point: Vec2 },
+    hit: { kind: "target" | "vessel" | "ufo"; target?: Target; ufo?: Ufo; vessel?: Vessel; part?: PartInstance; point: Vec2 },
     dmg: number,
     fx: Fx,
   ) {
     if (hit.kind === "target" && hit.target) this.hurtTarget(hit.target, dmg, fx);
+    if (hit.kind === "ufo" && hit.ufo) this.hurtUfo(hit.ufo, dmg, fx);
     if (hit.kind === "vessel" && hit.vessel && hit.part) hit.vessel.damagePart(hit.part, dmg, fx);
   }
 
@@ -279,6 +409,10 @@ export class Combat {
       for (const t of this.targets) {
         if (t.alive && V.len(V.sub(point, t.pos)) < t.radius)
           return { kind: "target" as const, target: t, point };
+      }
+      for (const u of this.ufos) {
+        if (u.alive && V.len(V.sub(point, u.pos)) < u.radius)
+          return { kind: "ufo" as const, ufo: u, point };
       }
       for (const v of vessels) {
         if (v.id === ownerId) continue;

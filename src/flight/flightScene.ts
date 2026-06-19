@@ -49,6 +49,9 @@ export class FlightScene {
   private fireCooldown = new Map<string, number>();
   private clock = 0;
   private shake = 0;
+  private score = 0;
+  private combo = 1;
+  private comboTimer = 0;
   private milestones = new Set<string>();
   private lastBodyId = "terra";
 
@@ -79,6 +82,7 @@ export class FlightScene {
     this.fairingSprites.forEach((s) => s.destroy());
     this.fairingSprites.clear();
     this.combat = new Combat();
+    this.combat.onScore = (pts, pos) => this.addScore(pts, pos);
     this.fx = new Particles();
     this.fx.onBoom = (size) => {
       this.audio.explosion(size);
@@ -91,6 +95,9 @@ export class FlightScene {
     this.throttle = 0;
     this.weaponGroup = 0;
     this.sas = "off";
+    this.score = 0;
+    this.combo = 1;
+    this.comboTimer = 0;
 
     const v = assembleVessel(design);
     this.player = v;
@@ -204,6 +211,15 @@ export class FlightScene {
     return clamp(err * 3 - p.angVel * 1.5, -1, 1); // PD controller
   }
 
+  private addScore(points: number, pos: Vec2) {
+    this.combo = this.comboTimer > 0 ? Math.min(8, this.combo + 1) : 1;
+    this.comboTimer = 3.5; // window to keep the combo going
+    this.score += points * this.combo;
+    this.shake = Math.min(16, this.shake + 1.5);
+    if (this.combo >= 3) this.toast(`💥 ${this.combo}× combo!`);
+    void pos;
+  }
+
   private cycleWeapon() {
     const kinds = this.availableWeaponKinds();
     if (kinds.length === 0) return;
@@ -301,6 +317,10 @@ export class FlightScene {
       this.cam.center = { ...this.world.dominantBody(this.player.pos).pos };
     }
     this.shake *= Math.exp(-frameDt * 7); // decay screen shake
+    if (this.comboTimer > 0) {
+      this.comboTimer -= frameDt;
+      if (this.comboTimer <= 0) this.combo = 1;
+    }
 
     this.checkMilestones();
     this.render();
@@ -455,6 +475,26 @@ export class FlightScene {
         jitter: Math.min(6, r * 0.1),
       });
     }
+    // UFOs (flying saucers)
+    for (const u of this.combat.ufos) {
+      const s = this.cam.worldToScreen(u.pos);
+      const rw = u.radius * this.cam.zoom;
+      const r = Math.max(6, rw);
+      if (s.x + r < 0 || s.x - r > W || s.y + r < 0 || s.y - r > H) continue;
+      const bob = Math.sin(u.wob * 2) * r * 0.06;
+      // saucer body (squashed) + dome
+      g.ellipse(s.x, s.y + bob, r, r * 0.42);
+      g.fill({ color: u.flash > 0 ? 0xfff2c8 : 0x9aa6b0 });
+      g.stroke({ color: 0x2a2118, width: 2 });
+      g.ellipse(s.x, s.y + bob - r * 0.22, r * 0.5, r * 0.32);
+      g.fill({ color: 0x7fb6e0 });
+      g.stroke({ color: 0x2a2118, width: 2 });
+      // running lights
+      for (let i = -1; i <= 1; i++) {
+        g.circle(s.x + i * r * 0.55, s.y + bob + r * 0.12, Math.max(1, r * 0.08));
+        g.fill({ color: i === 0 ? 0xff5b5b : 0xffd24a });
+      }
+    }
   }
 
   private hideAllSprites() {
@@ -577,6 +617,17 @@ export class FlightScene {
       g.moveTo(a.x, a.y);
       g.lineTo(e.x, e.y);
       g.stroke({ color: 0xffd2d2, width: 1, alpha: Math.min(1, b.life / 0.1) });
+    }
+    // enemy bolts (UFO fire)
+    for (const b of this.combat.bolts) {
+      const s = this.cam.worldToScreen(b.pos);
+      const body = this.world.dominantBody(b.pos);
+      const d = V.norm(V.sub(b.vel, body.vel));
+      g.moveTo(s.x - d.x * 10, s.y + d.y * 10);
+      g.lineTo(s.x, s.y);
+      g.stroke({ color: 0x9bff6b, width: 3, cap: "round" });
+      g.circle(s.x, s.y, 3);
+      g.fill({ color: 0xe6ffd6 });
     }
   }
 
@@ -838,8 +889,10 @@ export class FlightScene {
         return `<span data-sas="${m}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${sasLabel[m]}</span>`;
       })
       .join("");
+    const comboStr = this.combo > 1 ? ` <span style="color:#c84b31">${this.combo}×</span>` : "";
     this.statusEl.innerHTML = `
       <h3>⚙ Status</h3>
+      <div>Score: <b>${this.score}</b>${comboStr}</div>
       <div>Warp: <b>${this.warp}×</b></div>
       <div style="margin-top:4px">SAS (T):</div>
       <div>${sasChips}</div>
