@@ -10,6 +10,7 @@ import { Combat } from "./weapons";
 import { Particles } from "./fx";
 import { sketchCircle } from "../sketch";
 import { GameAudio } from "../audio";
+import { loadLog, saveLog, GameLog } from "../storage";
 
 const WEAPON_KINDS: WeaponSpec["kind"][] = ["cannon", "laser", "missile"];
 
@@ -54,6 +55,8 @@ export class FlightScene {
   private comboTimer = 0;
   private milestones = new Set<string>();
   private lastBodyId = "terra";
+  private log: GameLog = loadLog();
+  private wasLanded = false;
 
   private gridEl!: HTMLDivElement;
   private navEl!: HTMLDivElement;
@@ -98,6 +101,7 @@ export class FlightScene {
     this.score = 0;
     this.combo = 1;
     this.comboTimer = 0;
+    this.wasLanded = false;
 
     const v = assembleVessel(design);
     this.player = v;
@@ -379,6 +383,27 @@ export class FlightScene {
     if (this.player.landed && body.id === "terra" && this.clock > 20) {
       this.toastOnce("home", "🏠 Back on solid ground.");
     }
+
+    // plant a flag on a fresh touchdown (ignore the launch pad)
+    if (this.player.landed && !this.wasLanded && !(body.id === "terra" && this.clock < 8)) {
+      this.plantFlag(body);
+    }
+    this.wasLanded = this.player.landed;
+  }
+
+  private plantFlag(body: { id: string; name: string; pos: Vec2 }) {
+    const angle = Math.atan2(this.player!.pos.y - body.pos.y, this.player!.pos.x - body.pos.x);
+    const near = this.log.flags.some(
+      (f) => f.body === body.id && Math.abs(((f.angle - angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.03,
+    );
+    if (!near) this.log.flags.push({ body: body.id, angle });
+    if (!this.log.visited.includes(body.id)) {
+      this.log.visited.push(body.id);
+      this.toast(`🚩 First landing on ${body.name}!`);
+    } else if (!near) {
+      this.toast(`🚩 Flag planted on ${body.name}`);
+    }
+    saveLog(this.log);
   }
 
   // ---------------- rendering ----------------
@@ -493,6 +518,35 @@ export class FlightScene {
       for (let i = -1; i <= 1; i++) {
         g.circle(s.x + i * r * 0.55, s.y + bob + r * 0.12, Math.max(1, r * 0.08));
         g.fill({ color: i === 0 ? 0xff5b5b : 0xffd24a });
+      }
+    }
+
+    // planted flags on the surface of the body we're near
+    if (this.player) {
+      const db = this.world.dominantBody(this.player.pos);
+      const poleLen = 9 * this.cam.zoom; // 9 m pole
+      if (poleLen >= 3) {
+        for (const f of this.log.flags) {
+          if (f.body !== db.id) continue;
+          const up = { x: Math.cos(f.angle), y: Math.sin(f.angle) }; // radial out
+          const base = this.cam.worldToScreen(V.add(db.pos, V.scale(up, db.radius)));
+          if (base.x < -50 || base.x > W + 50 || base.y < -50 || base.y > H + 50) continue;
+          const ups = { x: up.x, y: -up.y }; // screen radial-out
+          const perp = { x: -ups.y, y: ups.x };
+          const top = { x: base.x + ups.x * poleLen, y: base.y + ups.y * poleLen };
+          g.moveTo(base.x, base.y);
+          g.lineTo(top.x, top.y);
+          g.stroke({ color: 0x2a2118, width: 2, cap: "round" });
+          const fw = poleLen * 0.7;
+          const fd = poleLen * 0.3;
+          g.poly([
+            top.x, top.y,
+            top.x + perp.x * fw - ups.x * fd, top.y + perp.y * fw - ups.y * fd,
+            top.x - ups.x * fd * 1.5, top.y - ups.y * fd * 1.5,
+          ]);
+          g.fill({ color: 0xc84b31 });
+          g.stroke({ color: 0x2a2118, width: 1.5 });
+        }
       }
     }
   }

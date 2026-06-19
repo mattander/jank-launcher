@@ -2,6 +2,38 @@ import { Design } from "./build/design";
 import { getPart } from "./parts/catalog";
 
 const KEY = "jank-launcher:designs";
+const LOG_KEY = "jank-launcher:log";
+
+// Persistent exploration log: bodies landed on + planted flags.
+export interface Flag {
+  body: string;
+  angle: number; // surface angle (radians) where the flag stands
+}
+export interface GameLog {
+  visited: string[];
+  flags: Flag[];
+}
+
+export function loadLog(): GameLog {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    if (raw) {
+      const l = JSON.parse(raw) as GameLog;
+      return { visited: l.visited ?? [], flags: l.flags ?? [] };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { visited: [], flags: [] };
+}
+
+export function saveLog(log: GameLog) {
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch {
+    /* ignore */
+  }
+}
 
 export interface SaveFile {
   app: "jank-launcher";

@@ -13,6 +13,10 @@ import { computeStages } from "./staging";
 import { stockDesigns } from "./stock";
 import * as storage from "../storage";
 
+const BODY_NAMES: Record<string, string> = {
+  sun: "Sol", terra: "Terra", luna: "Luna", rusty: "Rusty", frost: "Frost",
+};
+
 const CATEGORY_ORDER: PartCategory[] = [
   "command", "fuel", "engine", "aero", "structural", "utility", "weapon",
 ];
@@ -606,7 +610,15 @@ export class Builder {
       <div>Launch TWR: <b style="color:${twrColor}">${s.twr.toFixed(2)}</b></div>
       <div>Δv (est): <b>${s.deltaV.toFixed(0)} m/s</b></div>
       ${s.twr > 0 && s.twr < 1 ? '<div style="color:#c84b31">⚠ TWR &lt; 1 — won\'t lift off!</div>' : ""}
+      ${this.exploredLine()}
     `;
+  }
+
+  private exploredLine(): string {
+    const visited = storage.loadLog().visited;
+    if (visited.length === 0) return "";
+    const names = visited.map((id) => BODY_NAMES[id] ?? id);
+    return `<div style="margin-top:4px;opacity:0.85">🚩 Explored: ${escapeHtml(names.join(", "))}</div>`;
   }
 }
 
