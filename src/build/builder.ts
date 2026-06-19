@@ -299,22 +299,21 @@ export class Builder {
     return { x: p.x + (p.flip ? -n.x : n.x), y: p.y + n.y };
   }
 
-  // Compute a snapped placement for `def` near the cursor. Any part can attach
-  // two ways; we pick whichever attach point is closest to the cursor:
-  //   • stack  — align one of the part's stack nodes to a host node
-  //   • surface — mount the part to the side of a host (by its radial node if it
-  //     has one, otherwise by its own side edge — so tanks/SRBs work as boosters)
+  // Compute a snapped placement for `def` near the cursor. A part can attach two
+  // ways. Stack nodes are "sticky": if a stack node is within reach we always
+  // prefer it, and only fall back to surface (side) attachment when no stack
+  // node is nearby — otherwise the side point (often closer to the cursor) snaps
+  // far too eagerly.
   private computeSnap(def: PartDef, ignoreUid?: string): NonNullable<typeof this.ghost> {
     const cur = this.cursorWorld;
     const others = this.design.parts.filter((p) => p.uid !== ignoreUid);
     if (others.length === 0) return { x: cur.x, y: cur.y, flip: false };
 
     type Cand = { x: number; y: number; flip: boolean; parentUid: string; dist: number };
-    const cands: Cand[] = [];
-    const offer = (attach: Vec2, gate: number, c: Omit<Cand, "dist">) => {
-      const dist = Math.hypot(attach.x - cur.x, attach.y - cur.y);
-      if (dist < gate) cands.push({ ...c, dist });
-    };
+    const STACK_GATE = 2.6; // generous, so top/bottom nodes are easy to hit
+    const SURF_GATE = 1.4; // tight, so sides only grab when you're right on them
+    const stackCands: Cand[] = [];
+    const surfCands: Cand[] = [];
 
     const myStack = def.nodes.filter((n) => n.type === "stack");
     const myRadial = def.nodes.find((n) => n.type === "radial");
@@ -322,11 +321,17 @@ export class Builder {
     for (const e of others) {
       const ed = getPart(e.defId);
 
-      // --- stack attach: my stack node -> any host node ---
+      // --- stack attach: my stack node -> any host stack node ---
       for (const hn of ed.nodes) {
+        if (hn.type !== "stack") continue; // stack-to-stack only
         const target = this.nodeWorld(e, hn);
+        const dist = Math.hypot(target.x - cur.x, target.y - cur.y);
+        if (dist >= STACK_GATE) continue;
         for (const gn of myStack) {
-          offer(target, 2.0, { x: target.x - gn.x, y: target.y - gn.y, flip: false, parentUid: e.uid });
+          // pair opposite-end nodes only (my top to a bottom node, etc.) so the
+          // part sits beyond the host instead of overlapping it
+          if (Math.sign(hn.y) === Math.sign(gn.y)) continue;
+          stackCands.push({ x: target.x - gn.x, y: target.y - gn.y, flip: false, parentUid: e.uid, dist });
         }
       }
 
@@ -334,20 +339,24 @@ export class Builder {
       const side = cur.x < e.x ? -1 : 1; // -1 = host's left edge
       const edgeX = e.x + (side * ed.width) / 2;
       const ay = clamp(cur.y, e.y - ed.height * 0.45, e.y + ed.height * 0.45);
-      const attach = { x: edgeX, y: ay };
-      if (myRadial) {
-        const flip = side < 0;
-        const nx = flip ? -myRadial.x : myRadial.x;
-        offer(attach, 3.0, { x: edgeX - nx, y: ay - myRadial.y, flip, parentUid: e.uid });
-      } else {
-        // no radial node: butt the part's near side against the host edge
-        offer(attach, 3.0, { x: edgeX + (side * def.width) / 2, y: ay, flip: false, parentUid: e.uid });
+      const dist = Math.hypot(edgeX - cur.x, ay - cur.y);
+      if (dist < SURF_GATE) {
+        if (myRadial) {
+          const flip = side < 0;
+          const nx = flip ? -myRadial.x : myRadial.x;
+          surfCands.push({ x: edgeX - nx, y: ay - myRadial.y, flip, parentUid: e.uid, dist });
+        } else {
+          // no radial node: butt the part's near side against the host edge
+          surfCands.push({ x: edgeX + (side * def.width) / 2, y: ay, flip: false, parentUid: e.uid, dist });
+        }
       }
     }
 
-    if (cands.length === 0) return { x: cur.x, y: cur.y, flip: false };
-    cands.sort((a, b) => a.dist - b.dist);
-    const best = cands[0];
+    // stack always wins when available; surface only as a fallback
+    const pool = stackCands.length ? stackCands : surfCands;
+    if (pool.length === 0) return { x: cur.x, y: cur.y, flip: false };
+    pool.sort((a, b) => a.dist - b.dist);
+    const best = pool[0];
     return { x: best.x, y: best.y, flip: best.flip, parentUid: best.parentUid };
   }
 
