@@ -14,6 +14,7 @@ export interface PartInstance {
   deployed: boolean; // chutes / legs
   hp: number;
   alive: boolean;
+  flame: number; // 0..1 current exhaust intensity (for rendering plumes)
 }
 
 export interface VesselInput {
@@ -26,6 +27,9 @@ export interface VesselInput {
 export interface Fx {
   explosion(pos: Vec2, size: number): void;
   puff(pos: Vec2, vel: Vec2, color: number): void;
+  smoke(pos: Vec2, vel: Vec2): void;
+  ember(pos: Vec2, vel: Vec2, color: number, size?: number): void;
+  fireworks(pos: Vec2, size: number): void;
 }
 
 const BASE_STRENGTH = 1400; // kN per meter of joint, tuned so flight is stable
@@ -162,25 +166,28 @@ export class Vessel {
     if (this.throttle > 0.001) this.srbsLit = true;
     for (const p of this.parts) {
       if (!p.alive || !p.def.thrust) continue;
+      let firing = 0;
       if (p.def.solid) {
         // SRB: latch lit, burns full until empty
         if (this.srbsLit && p.fuel > 0) {
           const burn = Math.min(p.fuel, p.def.fuelBurn! * dt);
           p.fuel -= burn;
           thrust += p.def.thrust;
-          this.emitExhaust(p, fx, 1);
+          firing = 1;
         }
       } else {
         // liquid: draw from shared pool
         if (this.throttle > 0 && this.liquidFuel > 0) {
-          const want = p.def.fuelBurn! * this.throttle * dt;
-          const got = this.drainLiquid(want);
+          const got = this.drainLiquid(p.def.fuelBurn! * this.throttle * dt);
           if (got > 0) {
             thrust += p.def.thrust * this.throttle;
-            this.emitExhaust(p, fx, this.throttle);
+            firing = this.throttle;
           }
         }
       }
+      // ease the flame level toward the firing level for smooth plumes
+      p.flame += (firing - p.flame) * Math.min(1, dt * 12);
+      if (firing > 0) this.emitExhaust(p, fx, firing);
     }
 
     const up = this.upDir();
@@ -202,6 +209,7 @@ export class Vessel {
         accel = V.add(accel, V.scale(V.norm(vRelAir), -fDrag / this.mass));
       }
     }
+    this.emitReentry(world, body, fx);
 
     // ---- steering torque ----
     if (input && this.controllable) {
@@ -285,11 +293,41 @@ export class Vessel {
   }
 
   private emitExhaust(p: PartInstance, fx: Fx, power: number) {
-    if (Math.random() > 0.5 * power + 0.1) return;
-    const w = this.partWorld(p);
     const down = V.scale(this.upDir(), -1);
-    const ev = V.add(this.vel, V.scale(down, 40 + Math.random() * 30));
-    fx.puff(V.add(w, V.scale(down, p.def.height * 0.4)), ev, 0xff8a3d);
+    const nozzle = V.add(this.partWorld(p), V.scale(down, p.def.height * 0.5));
+    // exhaust tip is below the nozzle, where smoke/contrail forms
+    const tip = V.add(nozzle, V.scale(down, p.def.width * (1 + power)));
+    if (Math.random() < 0.5 * power + 0.2) {
+      const ev = V.add(this.vel, V.scale(down, 30 + Math.random() * 50));
+      fx.smoke(V.add(tip, { x: (Math.random() - 0.5) * 2, y: (Math.random() - 0.5) * 2 }), ev);
+    }
+    if (Math.random() < 0.4 * power) {
+      const spread = V.rot(down, (Math.random() - 0.5) * 0.5);
+      const ev = V.add(this.vel, V.scale(spread, 60 + Math.random() * 60));
+      fx.ember(nozzle, ev, Math.random() < 0.5 ? 0xffd24a : 0xff8a3d, 2 + Math.random() * 2);
+    }
+  }
+
+  // glowing plasma sheath when tearing through atmosphere at speed
+  private emitReentry(world: World, body: Body, fx: Fx) {
+    const rho = world.airDensity(this.pos, body);
+    if (rho < 0.04) return;
+    const vRel = V.sub(this.vel, body.vel);
+    const speed = V.len(vRel);
+    if (speed < 1100) return;
+    const intensity = Math.min(1, ((speed - 1000) / 1400) * (rho / 0.35));
+    if (intensity <= 0) return;
+    const dir = V.norm(vRel); // leading edge faces the direction of travel
+    const perp = { x: -dir.y, y: dir.x };
+    const reach = this.dragArea() * 0.9 + 2;
+    const lead = V.add(this.pos, V.scale(dir, reach));
+    const n = 1 + Math.floor(intensity * 3);
+    for (let i = 0; i < n; i++) {
+      const off = (Math.random() - 0.5) * reach * 1.6;
+      const at = V.add(lead, V.scale(perp, off));
+      const ev = V.add(this.vel, V.add(V.scale(dir, -(60 + Math.random() * 140)), V.scale(perp, off * 3)));
+      fx.ember(at, ev, Math.random() < 0.5 ? 0xfff2c8 : Math.random() < 0.6 ? 0xff8a3d : 0xc84b31, 3 + Math.random() * 4);
+    }
   }
 
   // ---- split helpers ----
@@ -571,6 +609,7 @@ export function assembleVessel(design: Design): Vessel {
       deployed: false,
       hp: PART_HP,
       alive: true,
+      flame: 0,
     };
   });
 

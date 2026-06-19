@@ -59,11 +59,12 @@ export class FlightScene {
   private toastEl!: HTMLDivElement;
   private helpEl!: HTMLDivElement;
   private gNav = new Graphics();
+  private gFlame = new Graphics();
 
   constructor(app: Application, onExit: () => void) {
     this.app = app;
     this.onExit = onExit;
-    this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.vesselsLayer, this.gProj, this.gAim, this.gNav, this.gMap);
+    this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.gFlame, this.vesselsLayer, this.gProj, this.gAim, this.gNav, this.gMap);
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
@@ -371,6 +372,7 @@ export class FlightScene {
       this.gAim.clear();
       this.gTraj.clear();
       this.gNav.clear();
+      this.gFlame.clear();
       this.hideAllSprites();
       this.layer.position.set(0, 0);
       return;
@@ -385,6 +387,7 @@ export class FlightScene {
     this.drawSky();
     this.drawBodies();
     this.drawTrajectory(this.gTraj, 0.4);
+    this.drawFlames();
     this.drawVessels();
     this.drawProjectiles();
     this.gParticles.clear();
@@ -457,6 +460,40 @@ export class FlightScene {
   private hideAllSprites() {
     this.partSprites.forEach((s) => (s.visible = false));
     this.fairingSprites.forEach((s) => (s.visible = false));
+  }
+
+  // Flickering layered flame plume out of each firing engine.
+  private drawFlames() {
+    const g = this.gFlame;
+    g.clear();
+    const k = this.cam.zoom;
+    for (const v of this.vessels) {
+      const down = V.scale(v.upDir(), -1); // exhaust direction (world)
+      for (const p of v.aliveParts()) {
+        if (!p.def.thrust || p.flame < 0.02) continue;
+        const nozzle = V.add(v.partWorld(p), V.scale(down, p.def.height * 0.5));
+        const ns = this.cam.worldToScreen(nozzle);
+        const ds = { x: down.x, y: -down.y }; // screen-space exhaust dir
+        const perp = { x: -ds.y, y: ds.x };
+        const flick = 0.75 + Math.random() * 0.4;
+        const baseW = p.def.width * 0.42 * k;
+        const len = (1.3 + p.flame * 2.6) * p.def.width * k * flick;
+        // layered cones: outer red -> orange -> yellow core
+        const cone = (wMul: number, lMul: number, color: number, alpha: number) => {
+          const bw = baseW * wMul;
+          const tip = { x: ns.x + ds.x * len * lMul, y: ns.y + ds.y * len * lMul };
+          g.poly([
+            ns.x + perp.x * bw, ns.y + perp.y * bw,
+            ns.x - perp.x * bw, ns.y - perp.y * bw,
+            tip.x, tip.y,
+          ]);
+          g.fill({ color, alpha });
+        };
+        cone(1.25, 1.0, 0xc84b31, 0.55);
+        cone(1.0, 0.8, 0xff8a3d, 0.8);
+        cone(0.55, 0.6, 0xffe79a, 0.95);
+      }
+    }
   }
 
   private drawVessels() {
