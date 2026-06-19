@@ -24,6 +24,7 @@ export interface WeaponSpec {
   rate: number; // shots per second
   speed: number; // projectile speed m/s (ignored for laser)
   range: number;
+  festive?: boolean; // detonates into a harmless colourful firework
 }
 
 export interface PartDef {
@@ -160,6 +161,24 @@ export const PARTS: PartDef[] = [
     thrust: 240, fuelBurn: 22, solid: true, fuel: 360,
     nodes: [{ x: 0, y: 2.2, type: "stack" }, { x: -0.8, y: 0.6, type: "radial" }],
   },
+  {
+    id: "engine-vac",
+    name: "Vac Nozzle",
+    category: "engine",
+    blurb: "Sips fuel, sips thrust. Wildly efficient in vacuum.",
+    width: 1.6, height: 1.6, mass: 0.3, color: C.dark, shape: "engine",
+    thrust: 95, fuelBurn: 3, gimbal: true,
+    nodes: [{ x: 0, y: 0.8, type: "stack" }, { x: 0, y: -0.8, type: "stack" }],
+  },
+  {
+    id: "srb-big",
+    name: "Thumper SRB",
+    category: "engine",
+    blurb: "An enormous tube of go. Hold on tight.",
+    width: 1.8, height: 5.6, mass: 0.7, color: C.white, shape: "srb",
+    thrust: 380, fuelBurn: 30, solid: true, fuel: 620,
+    nodes: [{ x: 0, y: 2.8, type: "stack" }, { x: -0.9, y: 0.8, type: "radial" }],
+  },
 
   // ---------- AERO ----------
   {
@@ -185,6 +204,14 @@ export const PARTS: PartDef[] = [
     blurb: "Small fin for fine swooshing.",
     width: 1.1, height: 1.0, mass: 0.03, color: C.teal, shape: "fin",
     nodes: [{ x: -0.15, y: 0.3, type: "radial" }],
+  },
+  {
+    id: "heatshield",
+    name: "Heat Shield",
+    category: "aero",
+    blurb: "Wide dish for the toasty side of re-entry. Adds drag.",
+    width: 2.8, height: 0.9, mass: 0.25, color: C.copper, shape: "shield",
+    nodes: [{ x: 0, y: 0.45, type: "stack" }],
   },
 
   // ---------- STRUCTURAL ----------
@@ -307,6 +334,24 @@ export const PARTS: PartDef[] = [
     width: 1.2, height: 1.6, mass: 0.22, color: C.teal, shape: "missiles",
     weapon: { kind: "missile", damage: 90, rate: 1.2, speed: 160, range: 6500 },
     nodes: [{ x: -0.6, y: 0, type: "radial" }],
+  },
+  {
+    id: "railgun",
+    name: "Rail Driver",
+    category: "weapon",
+    blurb: "Hypervelocity slug. Long range, big punch, slow to recharge.",
+    width: 0.8, height: 2.0, mass: 0.3, color: C.steel, shape: "railgun",
+    weapon: { kind: "cannon", damage: 140, rate: 0.6, speed: 2200, range: 9000 },
+    nodes: [{ x: -0.4, y: 0, type: "radial" }],
+  },
+  {
+    id: "firework",
+    name: "Firework Launcher",
+    category: "weapon",
+    blurb: "Pure celebration. Bursts into colour. Harmless. Mostly.",
+    width: 1.0, height: 1.3, mass: 0.1, color: C.gold, shape: "missiles",
+    weapon: { kind: "cannon", damage: 8, rate: 3, speed: 420, range: 3000, festive: true },
+    nodes: [{ x: -0.5, y: 0, type: "radial" }],
   },
 ];
 
@@ -460,6 +505,22 @@ export function drawPart(g: Graphics, def: PartDef, pxPerM: number) {
           ...base, fill: C.red, lineWidth: lw * 0.6, seed: seed + i * 9,
         });
       }
+      break;
+    case "railgun":
+      // mounting block + long twin rails
+      sketchBox(g, hw * 0.6, hh * 0.5, { ...base, fill: def.color });
+      sketchLine(g, [[0, -hh * 0.25], [hw * 2.2, -hh * 0.25]], { ...base, lineWidth: lw, seed: seed + 1 });
+      sketchLine(g, [[0, hh * 0.25], [hw * 2.2, hh * 0.25]], { ...base, lineWidth: lw, seed: seed + 2 });
+      break;
+    case "shield":
+      // shallow dish: flat top, rounded underside
+      sketchPoly(g, [
+        [-hw, -hh],
+        [hw, -hh],
+        [hw * 0.7, hh],
+        [-hw * 0.7, hh],
+      ], { ...base, fill: def.color });
+      sketchLine(g, [[-hw, -hh], [hw, -hh]], { ...base, lineWidth: lw * 1.3, seed: seed + 5 });
       break;
     default:
       sketchBox(g, hw, hh, { ...base, fill: def.color });

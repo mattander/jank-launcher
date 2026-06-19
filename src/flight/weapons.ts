@@ -11,6 +11,7 @@ export interface Projectile {
   kind: "cannon" | "missile";
   ownerId: number;
   alive: boolean;
+  festive?: boolean; // bursts into a harmless firework
   // aim point stored relative to a body so it converges on the cursor on-screen
   // even as everything moves at orbital speed; detonates on arrival.
   targetRel?: Vec2;
@@ -141,6 +142,7 @@ export class Combat {
       kind: cannon ? "cannon" : "missile",
       ownerId,
       alive: true,
+      festive: spec.festive,
       targetRel,
       targetBody: aimBody.id,
     });
@@ -333,6 +335,10 @@ export class Combat {
   // Explode at `at`: visual blast + area damage to nearby targets and vessels.
   private detonate(pr: Projectile, at: Vec2, fx: Fx, vessels: Vessel[]) {
     pr.alive = false;
+    if (pr.festive) {
+      fx.fireworks(at, 1 + Math.random());
+      return; // celebration only — no real blast
+    }
     const blast = BLAST[pr.kind];
     fx.explosion(at, pr.kind === "missile" ? 2.2 : 1.4);
     for (const t of this.targets) {
