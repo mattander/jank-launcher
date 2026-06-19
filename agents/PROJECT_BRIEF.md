@@ -1,168 +1,168 @@
 # Jank Launcher — Project Brief & Agent Context
 
-This file is the durable context for the project so any agent (or human) can pick
-up if a session is interrupted. Keep it current as the design evolves.
+Durable context so any agent (or human) can pick up the project quickly. **Keep
+this current as the design evolves** — it's the first thing a fresh agent should
+read. See also `agents/VERIFY.md` for the in-browser verification workflow.
 
 ## What this is
 
 A hand-drawn, 2D, **KSP-esque** rocket sandbox that runs in the browser. The
-fantasy: doodle a badass rocket out of a big pile of parts, then fly it across a
-small solar system — and shoot lasers/cannons/missiles at stuff for fun. The
-explicit tone is **fun > simulator**. Jank is a feature.
+fantasy: doodle a badass rocket from a big pile of parts, fly it across a small
+solar system, land on things, and shoot lasers/cannons/missiles/fireworks at
+stuff. Tone is explicitly **fun > simulator** — jank is a feature.
 
-Owner: Matt (matt.anderson@customer.io / github `mattander`).
-Repo: https://github.com/mattander/jank-launcher (private).
+- Owner: Matt (matt.anderson@customer.io / github `mattander`).
+- Repo: https://github.com/mattander/jank-launcher (private).
+- Stack: **Vite + TypeScript + PixiJS v8**. No backend. No art assets — all
+  graphics are drawn procedurally in a wobbly "sketch" style.
 
-## Decisions locked during /grill-me (do not relitigate without reason)
+## Locked design decisions (from the initial /grill-me — don't relitigate without reason)
 
-1. **Renderer: PixiJS** (NOT three.js, despite the original ask — 2D-native is a
-   better fit for sketchy line art). Vite + TypeScript.
-2. **Art: procedural "rough.js style" sketch** — everything drawn at runtime with
-   jittered, double-stroked lines. No image assets. Papery palette. See
-   `src/sketch.ts`.
-3. **Builder: KSP-lite** — parts snap to stack (top/bottom) and radial (side)
-   attachment nodes. Live mass/thrust/TWR/Δv readout.
-4. **Physics: multi-body 2D solar system**, computed with **patched conics**
-   (only the dominant SOI body pulls on you at a time — KSP's trick).
-5. **World: home planet + moon + 2 more planets**, all orbiting a sun.
-   (Sol, Terra [home], Luna [Terra's moon], Rusty, Frost.)
-6. **Goals: sandbox + soft milestones** (toasts for "reached orbit", "landed on
-   Luna", etc.). No fail states, no contracts.
-7. **Jank: breakable structure, NOT punishing.** Springy/breakable joints that
-   are stiff enough for normal flight but snap under high-G or hard impacts —
-   comedy, not a soft-body simulator. Implemented as a **break-on-stress** model
-   (custom), not planck.js. Fallback was rigid-body + explosions if it proved
-   fiddly; the break-on-stress model is the chosen path.
-8. **Parts: all categories** — command, fuel, engines (incl. SRB), aero,
-   structural (decouplers, girders, legs, struts, adapters), utility (chutes,
-   RCS, solar, battery), weapons (cannon, laser, missile rack). ~25 parts.
-9. **Weapons: destroy anything** — terrain, debris, other craft, floating
-   targets/asteroids. Spawn targets for sport.
-10. **Controls: KSP keyboard** — A/D rotate, W/S throttle, Space stage, plus
-    **mouse-aim + click to fire**, **Tab to cycle weapon groups** (later
-    refinement from Matt), F as alt fire. Esc back to hangar. M map view.
-11. **Resources: fuel matters; electricity/RCS lightweight** (never hard-blocks
-    control — reduced authority at zero charge, not zero).
-12. **Setup: Vite + TypeScript**, new folder `jank-launcher` under `~/code`.
-13. **Persistence: localStorage + JSON import/export** of designs (and intended
-    save files) so rockets/games can be shared.
+1. **Renderer: PixiJS** (NOT three.js, despite the original ask — 2D-native fits
+   sketchy line art better).
+2. **Art: procedural rough/sketch style** — jittered, double-stroked lines drawn
+   at runtime. No image files. Papery palette. See `src/sketch.ts`.
+3. **Builder: KSP-lite** — parts attach at stack (top/bottom) and surface (side)
+   points; live mass/thrust/TWR/Δv readout.
+4. **Physics: multi-body 2D solar system** via **patched conics** (only the
+   dominant SOI body pulls on you at a time).
+5. **World:** Sol, Terra (home), Luna (Terra's moon), Rusty, Frost.
+6. **Goals: sandbox + soft milestones** (toasts; no fail states / contracts).
+7. **Jank: breakable-but-not-punishing** — stiff joints that snap under high-G /
+   hard impacts (break-on-stress model, custom; NOT planck.js/Box2D).
+8. **All part categories**; **weapons destroy anything**; **fun > sim**.
+9. **Controls: KSP keyboard** + mouse-aim/click-to-fire + Tab weapon groups.
+10. **Resources: fuel matters; electricity/RCS lightweight** (never hard-blocks
+    control).
+11. **Persistence: localStorage + JSON import/export** of designs.
 
-## Key engineering choices
+## Architecture & core conventions
 
-- **Custom physics, not a Box2D port.** Box2D-scale engines lose float precision
-  across solar-system distances; the break-on-stress model gives the "stuff snaps
-  off" comedy without a soft-body sim fighting the orbital integrator.
-- **Units:** meters, tonnes, seconds, kN. Accel = kN/tonne = m/s². Fuel mass =
-  `FUEL_MASS_PER_UNIT` (0.005 t/unit).
-- **Coordinates:** world is y-up; screen is y-down. `Camera` maps between them.
-  Geometry is authored at `REF_PPM` px/m and containers are scaled by
-  `zoom/REF_PPM`. Container rotation = `-worldAngle`.
-- **Vessel model:** a rigid assembly of `PartInstance`s with COM-centered local
-  coords (recentered every frame after fuel burn/part loss). Thrust applied
-  through COM along the up axis (avoids uncontrollable spins). Steering via
-  reaction-wheel/RCS torque from A/D input. Adjacency is a graph derived from
-  coincident attach nodes; staging and stress-breaks **cut edges** and spin off
-  the disconnected component as a new debris `Vessel`.
+- **Units:** meters, tonnes, seconds, kN. Accel = kN/tonne = m/s². Fuel mass per
+  unit = `FUEL_MASS_PER_UNIT` (0.005 t/unit, in `parts/catalog.ts`).
+- **Coordinates:** world is **y-up**, screen is **y-down**. `Camera`
+  (`src/camera.ts`) maps between them. Geometry is authored at `REF_PPM` px/m and
+  containers scale by `zoom/REF_PPM`; container rotation = `-worldAngle`.
+- **Camera uses logical pixels** (`app.screen.width/height`), NOT
+  `renderer.width` (physical) — otherwise everything mis-centers on HiDPI/Retina.
+- **Two scenes, one app.** `Game` (`src/game.ts`) owns a `Builder` and a
+  `FlightScene`, each a Pixi `Container` added to the stage, toggled by a
+  build↔flight state machine. The Pixi ticker drives `flight.update(dt)`.
+- **DOM HUD over canvas.** Both scenes lay their panels out with a full-screen
+  **CSS-grid overlay** (`pointer-events:none` container; panels `auto`; empty
+  cells pass clicks through to the canvas). Match this pattern for new panels.
+- **Design model** (`src/build/design.ts`): a `Design` is `{ name, parts:
+  PlacedPart[] }`. Each `PlacedPart` has `{ uid, defId, x, y, flip, parentUid? }`
+  in rocket-local meters (y-up). **Adjacency comes from explicit `parentUid`
+  edges**, recorded by the builder at placement — not from node coincidence.
+- **Vessel model** (`src/flight/vessel.ts`): a rigid assembly of `PartInstance`s
+  with COM-centered local coords (recentered every frame after fuel burn / part
+  loss). Thrust applies through the COM along the up axis (avoids spins); steering
+  is reaction-wheel/RCS torque. Adjacency is a graph from `parentUid`; **staging
+  and stress-breaks cut edges and spin the disconnected component off as a new
+  debris `Vessel`**. `assembleVessel(design)` builds the player vessel.
 
-## Status / progress
+### CRITICAL physics gotchas (read before touching flight)
+- **All velocity-dependent forces must use velocity relative to the dominant
+  body** (drag, parachutes, collisions, tracers). Bodies carry huge orbital
+  velocity (~8.8 km/s) in the sun frame; using absolute velocity once caused a
+  phantom ~60,000 m/s² drag and a numeric runaway.
+- **Orbital integration adds `World.bodyFrameAccel(body)`** to the craft (the
+  dominant body's own kinematic frame acceleration) on top of its gravity. This
+  makes the SOI frame locally inertial so a landed craft co-moves with its planet
+  and orbits stay Keplerian. Targets/asteroids/projectiles get the same term.
+- **Camera hard-follows the craft** (no positional smoothing) — smoothing can't
+  keep up with orbital speed and the craft slides off-screen.
 
-**v1 is complete and playable end to end.** All modules built, typecheck +
-production build clean, and verified in Chrome via Playwright (build → launch →
-ascent → orbit/HUD → weapons → solar-system map, no console errors).
+## Module map
 
-Built:
-- Scaffolding (package.json, tsconfig, vite, index.html shell, favicon).
-- `src/sketch.ts` — hand-drawn drawing helpers.
-- `src/types.ts` — Vec2 math.
-- `src/parts/catalog.ts` — full part catalog + `drawPart`.
-- `src/camera.ts` — camera + REF_PPM.
-- `src/flight/world.ts` — solar system + patched-conic gravity/atmosphere.
-- `src/build/design.ts` — design model + stats.
-- `src/flight/vessel.ts` — vessel physics, staging, break-on-stress, collision.
-- `src/flight/weapons.ts` — projectiles, lasers, targets/asteroids, damage.
-- `src/build/builder.ts` — build-mode editor.
-- `src/flight/fx.ts` — particle/explosion system.
-- `src/flight/flightScene.ts` — flight controller (input, camera, map, HUD,
-  milestones, weapons wiring).
-- `src/storage.ts` — localStorage + JSON import/export.
-- `src/main.ts` + `src/game.ts` — bootstrap + build<->flight state machine.
+| File | Responsibility |
+| --- | --- |
+| `src/main.ts` | Pixi `Application` bootstrap (async init), mounts `Game`. |
+| `src/game.ts` | Build↔flight state machine; ticker. |
+| `src/types.ts` | `Vec2` + `V` math helpers. |
+| `src/camera.ts` | `Camera` (world↔screen), `REF_PPM`. |
+| `src/sketch.ts` | Hand-drawn drawing primitives (jittered polys/lines/circles). |
+| `src/storage.ts` | localStorage save/load + JSON export/import; exploration log. |
+| `src/audio.ts` | `GameAudio` — procedural Web Audio (engine, weapons, booms). |
+| `src/parts/catalog.ts` | `PARTS` (30 part defs), `PartDef`/`WeaponSpec`, `drawPart`, `drawFairingShroud`, `getPart`. |
+| `src/build/design.ts` | `Design`/`PlacedPart`, `computeStats` (mass/TWR/Δv). |
+| `src/build/staging.ts` | `computeStages(design)` — ordered staging steps. |
+| `src/build/stock.ts` | `stockDesigns()` — ready-to-fly example craft. |
+| `src/build/builder.ts` | Build-mode editor: palette, snapping, symmetry, staging panel, save/load/stock, CSS-grid HUD. |
+| `src/flight/world.ts` | `World`: bodies, orbits, gravity, `bodyFrameAccel`, atmosphere, SOI. |
+| `src/flight/orbit.ts` | Pure Keplerian math: `orbit`, `orbitTiming`, `conicPath` (no pixi → unit-tested). |
+| `src/flight/vessel.ts` | `Vessel` physics, staging, break-on-stress, collision, fairings, exhaust/re-entry FX hooks, `Fx` interface. |
+| `src/flight/weapons.ts` | `Combat`: projectiles/lasers/missiles, targets, UFOs + enemy bolts, score callback. |
+| `src/flight/fx.ts` | `Particles` (implements `Fx`): explosions, smoke, embers, fireworks, flame draw inputs. |
+| `src/flight/flightScene.ts` | Flight controller: input, camera, map view, HUD + navball, milestones, weapons wiring, score/combo, SAS, flags, flame/re-entry rendering. |
+| `src/*.test.ts`, `src/**/*.test.ts` | Vitest suites (39 tests). |
+| `test/pixi-stub.ts` | pixi.js stub so logic modules import under Node. |
 
-### Gotchas learned (important for future work)
-- All velocity-dependent forces (drag, parachutes, collision response) MUST be
-  computed relative to the dominant body's velocity, because bodies carry large
-  orbital velocities in the sun frame. Using absolute velocity caused a phantom
-  ~60,000 m/s² drag and a numerical runaway. See the fix commit.
-- The camera hard-follows the craft (no positional smoothing). The world moves
-  at orbital speed (~8.8 km/s), so smoothing on absolute position lags the craft
-  off-screen.
-- Orbital integration uses `World.bodyFrameAccel(body)`: the craft gets the
-  dominant body's gravity PLUS that body's own (kinematic) frame acceleration.
-  This makes the SOI body frame locally inertial in absolute coordinates, so a
-  landed craft co-moves with its planet and orbits stay Keplerian relative to it
-  (verified rock-solid: 100 km circular orbit holds apo/peri within ~0.3 km and
-  ecc < 5e-4 over multiple orbits). Asteroids get the same term.
-- `import.meta.env.DEV` exposes `window.__flight` for debugging the live scene.
+## Current feature set (all built & verified)
 
-### Done since v1
-- Aim reticle + dotted aim line; ballistic rounds converge on the cursor and
-  airburst there with AoE; laser beam ends at the cursor.
-- Trajectory prediction line (Keplerian conic) in flight + on the map, with
-  apo/peri markers (`conicPath` in flightScene).
-- Balance pass: efficient engines (Bonfire ve ~4200), bigger tanks, much lighter
-  drag + steeper atmosphere falloff. A simple Big-Tank rocket reads ~4320 m/s dv
-  at TWR 3.45 and comfortably orbits Terra.
-- Staging UI: `computeStages()` (build/staging.ts) drives a builder stage stack;
-  flight HUD shows the next Space action (`Vessel.nextStageLabel`).
-- Weapon feel: muzzle flash, screen shake, pulsing reticle, procedural audio.
-- Weapons fly to target: missiles are guided rockets, cannons ballistic+short,
-  lasers instant/long. Aim point stored relative to the dominant body.
-- HiDPI fix: camera uses `app.screen` (logical px), not renderer.width.
-- Build QOL: unified stack-or-surface attachment (tanks/SRBs side-mount and go on
-  radial decouplers); 2x symmetry (X key); engines have bottom nodes so vertical
-  multi-stage stacks work; auto-fairing shroud on interstage engines.
-- Builder layout is a CSS-grid overlay (pointer-events:none container, panels in
-  named areas; clicks pass through empty cells to the canvas).
-- Map view: steer/throttle/stage while it frames the orbit around the dominant
-  body; oriented craft + prograde markers; trajectory line.
-- Stock rockets: `src/build/stock.ts` (📦 Stock button), deep-cloned on load.
-- Orbital math lives in `src/flight/orbit.ts` (pure, no pixi) for testability.
-- Tests: Vitest (`npm test`). pixi.js is stubbed via `test/pixi-stub.ts` aliased
-  in `vitest.config.ts` so logic modules import cleanly under Node. Suites cover
-  types/world/orbit/design/staging/vessel.
-- Flight HUD: grid overlay (nav/status/gauges/help/toasts) + Pixi navball; nav
-  shows time-to-apo/peri; SAS hold (T: off/prograde/retrograde/hold) via PD
-  controller in flightScene.sasRotate().
-- FX: layered engine flame plumes (gFlame), exhaust smoke/embers, re-entry plasma
-  (Vessel.emitReentry); Particles has glow + grow + fireworks().
-- Combat sandbox: UFOs + enemy bolts + score/combo (Combat.onScore →
-  flightScene.addScore). 30 parts incl. vac engine, Thumper SRB, heat shield,
-  railgun, firework (WeaponSpec.festive).
-- Exploration: plant-a-flag on landing + visited log persisted via storage
-  loadLog/saveLog (key jank-launcher:log); flags drawn on the dominant body.
+- **Builder:** ~30 parts across 7 categories; stack + surface attachment (stack
+  nodes are sticky, surface is the fallback); 2× symmetry (`X`); decouplers →
+  staging; engines have top+bottom nodes for vertical multi-stage; auto-fairing
+  shroud on interstage engines; live stats + staging panel; Save/Load
+  (localStorage), Export/Import (JSON), 📦 Stock craft.
+- **Flight:** patched-conic gravity across Sol/Terra/Luna/Rusty/Frost; fuel burn;
+  staging; parachutes; landing legs; break-on-stress; gentle-landing settle.
+- **HUD (grid + navball):** body/altitude/speed/vertical-speed; apo/peri with
+  **time-to-apo/peri**; throttle & fuel gauges; weapon-group chips; **SAS**
+  (`T`: off/prograde/retrograde/hold); time-warp; **score + combo**; trajectory
+  line in flight and on the **map view** (steer while watching your orbit).
+- **Weapons:** cannon (ballistic, short), laser (instant hitscan), missile
+  (guided), railgun (hypervelocity sniper), firework (festive). Aim with mouse,
+  click/`F` to fire, `Tab`/chips to switch. Rounds converge & airburst at the
+  cursor with AoE.
+- **Combat sandbox:** asteroids, blimps, and roaming **UFOs** that shoot back;
+  destroying things scores points × a combo multiplier.
+- **FX/feel:** layered engine flame plumes, exhaust contrails, **re-entry
+  plasma**, muzzle flash, screen shake, procedural audio (`N` mutes).
+- **Exploration:** land gently on a body → plant a persistent **flag** + log the
+  visit; flags drawn on the surface; "Explored: …" in the hangar.
 
-### Possible next steps / ideas (not yet done)
-- The builder Δv readout is single-stack (whole-rocket rocket equation); it
-  UNDERcounts a staged rocket's real dv. Compute per-stage dv using
-  computeStages() segments for an accurate number.
-- Maneuver nodes; SAS/prograde hold; predict SOI-transition patched conics.
-- Procedural surface detail / biomes; landing-site flags.
-- More parts, target variety, scoring.
-- A real favicon/app icon and a title screen.
+## Controls (flight)
 
-## How to run / verify
+`A/D` rotate · `W/S` throttle · `Shift/Ctrl` full/cut · `T` SAS · `Space` stage ·
+`R` RCS · mouse aim · click/`F` fire · `Tab` weapon group · `M` map · `,`/`.`
+time-warp · `N` mute · `Esc` hangar. Builder: click palette then click to place,
+drag to move, right-click to delete (subtree), wheel zoom, `X` symmetry.
+
+## localStorage keys
+
+- `jank-launcher:designs` — saved rocket designs (name → `Design`).
+- `jank-launcher:log` — exploration log `{ visited: string[], flags: Flag[] }`.
+
+## Commands
 
 ```bash
 npm install
-npm run dev        # play
-npm run typecheck  # tsc --noEmit (keep clean)
-npm run build      # tsc + vite build
+npm run dev        # play with hot reload (Vite)
+npm test           # Vitest (run once); npm run test:watch to watch
+npm run typecheck  # tsc --noEmit — keep clean (strict, noUnused* on)
+npm run build      # typecheck + production bundle
 ```
-
-Verify in a browser (the project is browser-only). Use the `browser-verification`
-/ `verify` skills when checking that flight actually works.
 
 ## Conventions
 
-- Conventional commits, signed-off with the Claude co-author trailer.
-- Keep `npm run typecheck` clean (strict TS, noUnusedLocals/Parameters on).
-- Match the existing sketchy/papery aesthetic for any new UI.
+- **Conventional commits**, ending with the Claude co-author trailer. Branch off
+  before committing if on the default branch; commit/push only when asked.
+- Keep `npm run typecheck` and `npm test` green before committing.
+- Match the **sketchy/papery aesthetic** and the **CSS-grid HUD pattern** for any
+  new UI. Reuse `sketch.ts` helpers and the palette colors in `catalog.ts` (`C`).
+- New pure logic should live in a pixi-free module (like `orbit.ts`) so it can be
+  unit-tested; add a `*.test.ts` beside it.
+- Don't commit the throwaway `.pw*.mjs` verification scripts or `shot-*.png` (see
+  VERIFY.md) — they're temporary.
+
+## Possible next steps / ideas (not yet done)
+
+- Builder Δv readout is single-stack (whole-rocket rocket equation) and
+  **undercounts staged rockets**; compute per-stage Δv from `computeStages()`.
+- Maneuver nodes / planned-burn preview; predict SOI-transition patched conics
+  (the trajectory line currently only draws the conic within the current SOI).
+- Radial/normal SAS hold; map focus-switching between bodies + map panning.
+- Procedural surface detail / biomes; a title screen; persistent high score.
+- Possible UI refactor: unify the two scenes' CSS-grid HUD scaffolding.

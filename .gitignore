@@ -3,3 +3,8 @@ dist/
 *.log
 .DS_Store
 .vite/
+
+# throwaway in-browser verification scripts + screenshots (see agents/VERIFY.md)
+.pw*.mjs
+shot-*.png
+.pwtmp/
