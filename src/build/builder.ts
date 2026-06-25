@@ -147,9 +147,7 @@ export class Builder {
 
     // hint (top-center)
     this.hintEl = div("panel");
-    this.hintEl.style.fontSize = "12px";
-    this.hintEl.style.maxWidth = "460px";
-    this.hintEl.style.textAlign = "center";
+    this.hintEl.classList.add("hint");
     this.hintEl.textContent = Builder.HINT;
     inGrid(this.hintEl, "hint", "center", "start");
   }
@@ -165,19 +163,15 @@ export class Builder {
 
     for (const cat of CATEGORY_ORDER) {
       const header = document.createElement("div");
+      header.className = "section-label";
       header.textContent = CATEGORY_LABEL[cat];
-      header.style.margin = "8px 0 4px";
-      header.style.fontWeight = "bold";
       this.paletteEl.appendChild(header);
       const grid = document.createElement("div");
-      grid.style.display = "flex";
-      grid.style.flexWrap = "wrap";
-      grid.style.gap = "5px";
+      grid.className = "parts-grid";
       for (const def of PARTS.filter((p) => p.category === cat)) {
         const b = document.createElement("button");
         b.textContent = def.name;
         b.title = def.blurb;
-        b.style.fontSize = "12px";
         b.onclick = () => this.startPlacing(def);
         grid.appendChild(b);
       }
@@ -273,8 +267,10 @@ export class Builder {
 
   private flashHint(msg: string) {
     this.hintEl.textContent = msg;
+    this.hintEl.classList.add("flash");
     setTimeout(() => {
       this.hintEl.textContent = Builder.HINT;
+      this.hintEl.classList.remove("flash");
     }, 2200);
   }
 
@@ -565,27 +561,42 @@ export class Builder {
       g.alpha = 0.55;
       this.placePartContainer(g, this.ghost.x, this.ghost.y, this.ghost.flip);
       this.ghostLayer.addChild(g);
+      this.drawSnapCue(this.ghost);
     }
     this.updateStats();
     this.updateStaging();
   }
 
+  private drawSnapCue(ghost: NonNullable<typeof this.ghost>) {
+    if (!ghost.parentUid) return;
+    const parent = this.design.parts.find((p) => p.uid === ghost.parentUid);
+    if (!parent) return;
+    const g = new Graphics();
+    const from = this.cam.worldToScreen({ x: parent.x, y: parent.y });
+    const to = this.cam.worldToScreen({ x: ghost.x, y: ghost.y });
+    g.moveTo(from.x, from.y);
+    g.lineTo(to.x, to.y);
+    g.stroke({ color: 0x3a7d8c, width: 2, alpha: 0.55, cap: "round" });
+    g.circle(to.x, to.y, 5);
+    g.stroke({ color: 0x3a7d8c, width: 2, alpha: 0.8 });
+    this.ghostLayer.addChild(g);
+  }
+
   private updateStaging() {
     const stages = computeStages(this.design);
     if (stages.length === 0) {
-      this.stagingEl.innerHTML = "<h3>🪜 Staging</h3><div style='opacity:0.7'>No stages — add decouplers or parachutes. Space stages in flight.</div>";
+      this.stagingEl.innerHTML = "<h3>🪜 Staging</h3><div class='muted'>No stages — add decouplers or parachutes. Space stages in flight.</div>";
       return;
     }
     // show in firing order, numbered from 1 (first Space press)
     const rows = stages
       .map((s, i) => {
         const icon = s.action === "deploy" ? "🪂" : "✂️";
-        return `<div style="display:flex;gap:6px;padding:3px 0;border-top:1px dashed #b3a684">
-          <b>${i + 1}</b> <span>${icon}</span> <span>${escapeHtml(s.label)}</span></div>`;
+        return `<div class="stage-row"><b>${i + 1}</b><span>${icon}</span><span>${escapeHtml(s.label)}</span></div>`;
       })
       .join("");
     this.stagingEl.innerHTML = `<h3>🪜 Staging</h3>
-      <div style="opacity:0.7;margin-bottom:2px">Space fires these in order:</div>${rows}`;
+      <div class="muted" style="margin-bottom:2px">Space fires these in order:</div>${rows}`;
   }
 
   private drawGuides() {
@@ -613,11 +624,13 @@ export class Builder {
     const twrColor = s.twr >= 1.2 ? "#3a7d8c" : s.twr > 0 ? "#c84b31" : "#777";
     this.statsEl.innerHTML = `
       <h3>📋 ${escapeHtml(this.design.name)}</h3>
-      <div>Parts: <b>${s.partCount}</b></div>
-      <div>Mass: <b>${s.wetMass.toFixed(1)} t</b> (dry ${s.dryMass.toFixed(1)} t)</div>
-      <div>Thrust: <b>${s.thrust.toFixed(0)} kN</b></div>
-      <div>Launch TWR: <b style="color:${twrColor}">${s.twr.toFixed(2)}</b></div>
-      <div>Δv (est): <b>${s.deltaV.toFixed(0)} m/s</b></div>
+      <div class="readout">
+        <span>Parts</span><b>${s.partCount}</b>
+        <span>Mass</span><b>${s.wetMass.toFixed(1)} t <span class="muted">(dry ${s.dryMass.toFixed(1)} t)</span></b>
+        <span>Thrust</span><b>${s.thrust.toFixed(0)} kN</b>
+        <span>Launch TWR</span><b style="color:${twrColor}">${s.twr.toFixed(2)}</b>
+        <span>Δv est.</span><b>${s.deltaV.toFixed(0)} m/s</b>
+      </div>
       ${s.twr > 0 && s.twr < 1 ? '<div style="color:#c84b31">⚠ TWR &lt; 1 — won\'t lift off!</div>' : ""}
       ${this.exploredLine()}
     `;
@@ -627,7 +640,7 @@ export class Builder {
     const visited = storage.loadLog().visited;
     if (visited.length === 0) return "";
     const names = visited.map((id) => BODY_NAMES[id] ?? id);
-    return `<div style="margin-top:4px;opacity:0.85">🚩 Explored: ${escapeHtml(names.join(", "))}</div>`;
+    return `<div class="muted" style="margin-top:6px">🚩 Explored: ${escapeHtml(names.join(", "))}</div>`;
   }
 }
 

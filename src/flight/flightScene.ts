@@ -66,6 +66,7 @@ export class FlightScene {
   private statusEl!: HTMLDivElement;
   private toastEl!: HTMLDivElement;
   private helpEl!: HTMLDivElement;
+  private mapBadgeEl!: HTMLDivElement;
   private gNav = new Graphics();
   private gFlame = new Graphics();
   private stars: Vec2[] = [];
@@ -259,6 +260,7 @@ export class FlightScene {
 
   private toggleMap() {
     this.mapMode = !this.mapMode;
+    this.mapBadgeEl.style.display = this.layer.visible && this.mapMode ? "block" : "none";
     if (this.mapMode) {
       // frame the craft's orbit around its dominant body so you can steer & watch it
       const body = this.player ? this.world.dominantBody(this.player.pos) : this.world.get("terra");
@@ -1004,17 +1006,21 @@ export class FlightScene {
 
     this.navEl = mkPanel();
     this.navEl.style.minWidth = "190px";
+    this.navEl.classList.add("compact");
     inGrid(this.navEl, "nav", "start", "start");
 
     this.statusEl = mkPanel();
     this.statusEl.style.minWidth = "150px";
+    this.statusEl.classList.add("compact");
     inGrid(this.statusEl, "status", "end", "start");
 
     this.gaugesEl = mkPanel();
     this.gaugesEl.style.width = "230px";
+    this.gaugesEl.classList.add("compact");
     inGrid(this.gaugesEl, "gauges", "start", "end");
 
     this.helpEl = mkPanel();
+    this.helpEl.classList.add("compact");
     this.helpEl.style.fontSize = "11px";
     this.helpEl.style.width = "270px";
     this.helpEl.style.lineHeight = "1.6";
@@ -1036,18 +1042,25 @@ export class FlightScene {
       pointerEvents: "none",
     } satisfies Partial<CSSStyleDeclaration>);
     this.gridEl.appendChild(this.toastEl);
+
+    this.mapBadgeEl = document.createElement("div");
+    this.mapBadgeEl.className = "map-badge";
+    this.mapBadgeEl.textContent = "MAP VIEW";
+    this.mapBadgeEl.style.display = "none";
+    document.body.appendChild(this.mapBadgeEl);
   }
 
   private setDomVisible(v: boolean) {
     this.gridEl.style.display = v ? "grid" : "none";
+    this.mapBadgeEl.style.display = v && this.mapMode ? "block" : "none";
   }
 
   private bar(label: string, pct: number, color: string): string {
     const w = Math.max(0, Math.min(100, pct));
-    return `<div style="margin-top:4px">${label}
-      <div style="height:10px;border:2px solid #2a2118;border-radius:5px;background:#e9dcbf;overflow:hidden;margin-top:2px">
-        <div style="height:100%;width:${w}%;background:${color}"></div>
-      </div></div>`;
+    return `<div class="meter">
+      <div class="meter-head"><span>${label}</span><b>${Math.round(w)}%</b></div>
+      <div class="meter-track"><div class="meter-fill" style="width:${w}%;background:${color}"></div></div>
+    </div>`;
   }
 
   private updateHud() {
@@ -1070,29 +1083,33 @@ export class FlightScene {
 
     this.navEl.innerHTML = `
       <h3>🛰 ${body.name}${this.player.landed ? " · landed" : ""}</h3>
-      <div>Altitude: <b>${fmt(alt)}</b></div>
-      <div>Speed: <b>${speed.toFixed(0)} m/s</b></div>
-      <div>Vertical: <b>${vSpeed >= 0 ? "▲" : "▼"} ${Math.abs(vSpeed).toFixed(0)} m/s</b></div>
-      <div>Apoapsis: <b>${apo}</b>${tApo}</div>
-      <div>Periapsis: <b>${peri}</b>${tPeri}</div>`;
+      <div class="readout">
+        <span>Altitude</span><b>${fmt(alt)}</b>
+        <span>Speed</span><b>${speed.toFixed(0)} m/s</b>
+        <span>Vertical</span><b>${vSpeed >= 0 ? "▲" : "▼"} ${Math.abs(vSpeed).toFixed(0)} m/s</b>
+        <span>Apoapsis</span><b>${apo}${tApo}</b>
+        <span>Periapsis</span><b>${peri}${tPeri}</b>
+      </div>`;
 
     // gauges (throttle + fuel bars, RCS, next stage)
     const nextStage = this.player.nextStageLabel();
     const fuelColor = fuelPct < 15 ? "#c84b31" : "#d98a3d";
     this.gaugesEl.innerHTML =
-      this.bar(`Throttle <b>${Math.round(this.throttle * 100)}%</b>`, this.throttle * 100, "#c84b31") +
-      this.bar(`Fuel <b>${Math.round(fuelPct)}%</b>`, fuelPct, fuelColor) +
-      `<div style="margin-top:6px">RCS: <b>${this.rcs ? "on" : "off"}</b></div>` +
-      `<div>Next stage ⎵: <b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b></div>`;
+      this.bar("Throttle", this.throttle * 100, "#c84b31") +
+      this.bar("Fuel", fuelPct, fuelColor) +
+      `<div class="readout" style="margin-top:7px">
+        <span>RCS</span><b>${this.rcs ? "on" : "off"}</b>
+        <span>Next ⎵</span><b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b>
+      </div>`;
 
     // status (warp + weapon group chips)
     const kinds = this.availableWeaponKinds();
     const chips = kinds.length
       ? kinds.map((k, i) => {
           const on = i === this.weaponGroup % kinds.length;
-          return `<span data-wg="${i}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${k}</span>`;
+          return `<span class="chip${on ? " on" : ""}" data-wg="${i}">${k}</span>`;
         }).join("")
-      : "<span style='opacity:0.6'>none</span>";
+      : "<span class='muted'>none</span>";
     const sasModes: (typeof this.sas)[] = ["off", "prograde", "retrograde", "hold"];
     const sasLabel: Record<typeof this.sas, string> = {
       off: "off", prograde: "prograde", retrograde: "retrograde", hold: "hold",
@@ -1100,7 +1117,7 @@ export class FlightScene {
     const sasChips = sasModes
       .map((m) => {
         const on = m === this.sas;
-        return `<span data-sas="${m}" style="cursor:pointer;display:inline-block;margin:2px 3px 0 0;padding:2px 6px;border:2px solid #2a2118;border-radius:6px;background:${on ? "#3a7d8c" : "#e9dcbf"};color:${on ? "#fff7e6" : "#2a2118"}">${sasLabel[m]}</span>`;
+        return `<span class="chip${on ? " on" : ""}" data-sas="${m}">${sasLabel[m]}</span>`;
       })
       .join("");
     const comboStr = this.combo > 1 ? ` <span style="color:#c84b31">${this.combo}×</span>` : "";
@@ -1108,12 +1125,14 @@ export class FlightScene {
     const total = this.world.landmarks.length;
     this.statusEl.innerHTML = `
       <h3>⚙ Status</h3>
-      <div>Score: <b>${this.score}</b>${comboStr}</div>
-      <div>Discoveries: <b>${found}/${total}</b></div>
-      <div>Warp: <b>${this.warp}×</b></div>
-      <div style="margin-top:4px">SAS (T):</div>
+      <div class="readout">
+        <span>Score</span><b>${this.score}${comboStr}</b>
+        <span>Discoveries</span><b>${found}/${total}</b>
+        <span>Warp</span><b>${this.warp}×</b>
+      </div>
+      <div class="section-label">SAS (T)</div>
       <div>${sasChips}</div>
-      <div style="margin-top:4px">Weapon (Tab):</div>
+      <div class="section-label">Weapon (Tab)</div>
       <div>${chips}</div>`;
     // wire chip clicks
     this.statusEl.querySelectorAll<HTMLSpanElement>("span[data-wg]").forEach((el) => {
@@ -1180,15 +1199,11 @@ export class FlightScene {
 
   private toast(msg: string) {
     const el = mkPanel();
-    el.style.position = "relative"; // flow inside the toast flex column
-    el.style.fontSize = "15px";
-    el.style.opacity = "1";
-    el.style.transition = "opacity 0.6s, transform 0.6s";
+    el.classList.add("toast");
     el.textContent = msg;
     this.toastEl.appendChild(el);
     setTimeout(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translateY(-12px)";
+      el.classList.add("exit");
     }, 2600);
     setTimeout(() => el.remove(), 3300);
   }
