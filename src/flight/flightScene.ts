@@ -3,7 +3,7 @@ import { Camera, REF_PPM } from "../camera";
 import { Vec2, V } from "../types";
 import { Design } from "../build/design";
 import { drawPart, drawFairingShroud, WeaponSpec } from "../parts/catalog";
-import { World } from "./world";
+import { Landmark, World } from "./world";
 import { orbit, conicPath, orbitTiming } from "./orbit";
 import { Vessel, assembleVessel, VesselInput } from "./vessel";
 import { Combat } from "./weapons";
@@ -57,6 +57,7 @@ export class FlightScene {
   private lastBodyId = "terra";
   private log: GameLog = loadLog();
   private wasLanded = false;
+  private lastCrashToast = -999;
 
   private gridEl!: HTMLDivElement;
   private navEl!: HTMLDivElement;
@@ -91,6 +92,7 @@ export class FlightScene {
       this.audio.explosion(size);
       this.shake = Math.min(16, this.shake + size * 3);
     };
+    this.fx.onCrash = (speed, destroyedParts) => this.reportCrash(speed, destroyedParts);
     this.milestones.clear();
     this.world = new World();
     this.clock = 0;
@@ -102,6 +104,7 @@ export class FlightScene {
     this.combo = 1;
     this.comboTimer = 0;
     this.wasLanded = false;
+    this.lastCrashToast = -999;
 
     const v = assembleVessel(design);
     this.player = v;
@@ -224,6 +227,18 @@ export class FlightScene {
     void pos;
   }
 
+  private reportCrash(speed: number, destroyedParts: number) {
+    if (this.clock - this.lastCrashToast < 1.2) return;
+    this.lastCrashToast = this.clock;
+    const flavor = speed > 55
+      ? "catastrophic lithobraking"
+      : speed > 30
+        ? "enthusiastic terrain sample"
+        : "unplanned structural audit";
+    const parts = destroyedParts === 1 ? "1 part lost" : `${destroyedParts} parts lost`;
+    this.toast(`💥 ${flavor}: ${speed.toFixed(0)} m/s, ${parts}`);
+  }
+
   private cycleWeapon() {
     const kinds = this.availableWeaponKinds();
     if (kinds.length === 0) return;
@@ -327,6 +342,7 @@ export class FlightScene {
     }
 
     this.checkMilestones();
+    this.checkDiscoveries();
     this.render();
     this.updateHud();
   }
@@ -389,6 +405,30 @@ export class FlightScene {
       this.plantFlag(body);
     }
     this.wasLanded = this.player.landed;
+  }
+
+  private checkDiscoveries() {
+    if (!this.player) return;
+    const body = this.world.dominantBody(this.player.pos);
+    if (body.id === "sun") return;
+    const alt = this.world.altitudeAbove(this.player.pos, body);
+    if (alt > Math.max(2600, body.radius * 0.02)) return;
+
+    const craftAngle = Math.atan2(this.player.pos.y - body.pos.y, this.player.pos.x - body.pos.x);
+    for (const landmark of this.world.landmarksFor(body.id)) {
+      if (this.log.discoveries.includes(landmark.id)) continue;
+      const arc = angularDistance(craftAngle, landmark.angle) * body.radius;
+      if (arc > landmark.radius) continue;
+
+      this.log.discoveries.push(landmark.id);
+      saveLog(this.log);
+      this.score += 250;
+
+      const surface = this.world.landmarkPosition(landmark);
+      const up = V.norm(V.sub(surface, body.pos));
+      this.fx.fireworks(V.add(surface, V.scale(up, 28)), 1.2);
+      this.toast(`🔎 ${landmark.name}: ${landmark.description}`);
+    }
   }
 
   private plantFlag(body: { id: string; name: string; pos: Vec2 }) {
@@ -524,6 +564,7 @@ export class FlightScene {
     // planted flags on the surface of the body we're near
     if (this.player) {
       const db = this.world.dominantBody(this.player.pos);
+      this.drawLandmarks(g, db.id, W, H);
       const poleLen = 9 * this.cam.zoom; // 9 m pole
       if (poleLen >= 3) {
         for (const f of this.log.flags) {
@@ -549,6 +590,71 @@ export class FlightScene {
         }
       }
     }
+  }
+
+  private drawLandmarks(g: Graphics, bodyId: string, screenW: number, screenH: number) {
+    const body = this.world.get(bodyId);
+    const screenScale = this.cam.zoom;
+    if (screenScale < 0.05) return;
+
+    for (const landmark of this.world.landmarksFor(bodyId)) {
+      const discovered = this.log.discoveries.includes(landmark.id);
+      const up = V.fromAngle(landmark.angle);
+      const base = this.cam.worldToScreen(V.add(body.pos, V.scale(up, body.radius)));
+      const ups = { x: up.x, y: -up.y };
+      const perp = { x: -ups.y, y: ups.x };
+      const h = Math.max(7, Math.min(40, landmark.radius * 0.18 * screenScale));
+      const w = h * 0.9;
+      if (base.x < -h || base.x > screenW + h || base.y < -h || base.y > screenH + h) continue;
+
+      if (discovered) {
+        this.drawDiscoveredLandmark(g, landmark, base, ups, perp, h, w);
+      } else {
+        this.drawMysteryLandmark(g, landmark, base, ups, perp, h, w);
+      }
+    }
+  }
+
+  private drawDiscoveredLandmark(
+    g: Graphics,
+    landmark: Landmark,
+    base: Vec2,
+    ups: Vec2,
+    perp: Vec2,
+    height: number,
+    width: number,
+  ) {
+    g.poly([
+      base.x + ups.x * height,
+      base.y + ups.y * height,
+      base.x + perp.x * width * 0.65,
+      base.y + perp.y * width * 0.65,
+      base.x - ups.x * height * 0.15,
+      base.y - ups.y * height * 0.15,
+      base.x - perp.x * width * 0.65,
+      base.y - perp.y * width * 0.65,
+    ]);
+    g.fill({ color: landmark.color, alpha: 0.95 });
+    g.stroke({ color: 0x2a2118, width: 2 });
+    g.circle(base.x + ups.x * height * 0.45, base.y + ups.y * height * 0.45, Math.max(2, height * 0.18));
+    g.fill({ color: landmark.accent, alpha: 0.95 });
+  }
+
+  private drawMysteryLandmark(
+    g: Graphics,
+    landmark: Landmark,
+    base: Vec2,
+    ups: Vec2,
+    perp: Vec2,
+    height: number,
+    width: number,
+  ) {
+    g.moveTo(base.x - perp.x * width * 0.55, base.y - perp.y * width * 0.55);
+    g.lineTo(base.x + ups.x * height, base.y + ups.y * height);
+    g.lineTo(base.x + perp.x * width * 0.55, base.y + perp.y * width * 0.55);
+    g.stroke({ color: landmark.accent, width: 2, alpha: 0.65 });
+    g.circle(base.x, base.y, Math.max(2, height * 0.16));
+    g.fill({ color: 0xfff2c8, alpha: 0.75 });
   }
 
   private hideAllSprites() {
@@ -785,6 +891,12 @@ export class FlightScene {
       const r = Math.max(3, b.radius * this.cam.zoom);
       g.poly(circlePoints(s.x, s.y, r));
       g.fill({ color: b.color });
+      for (const landmark of this.world.landmarksFor(b.id)) {
+        const pos = this.cam.worldToScreen(this.world.landmarkPosition(landmark));
+        const discovered = this.log.discoveries.includes(landmark.id);
+        g.circle(pos.x, pos.y, discovered ? 3.5 : 2.5);
+        g.fill({ color: discovered ? landmark.accent : 0xfff2c8, alpha: discovered ? 0.95 : 0.5 });
+      }
     }
     // predicted trajectory (drawn into the same map graphics)
     this.drawTrajectory(g, 0.85, false);
@@ -944,9 +1056,12 @@ export class FlightScene {
       })
       .join("");
     const comboStr = this.combo > 1 ? ` <span style="color:#c84b31">${this.combo}×</span>` : "";
+    const found = this.log.discoveries.length;
+    const total = this.world.landmarks.length;
     this.statusEl.innerHTML = `
       <h3>⚙ Status</h3>
       <div>Score: <b>${this.score}</b>${comboStr}</div>
+      <div>Discoveries: <b>${found}/${total}</b></div>
       <div>Warp: <b>${this.warp}×</b></div>
       <div style="margin-top:4px">SAS (T):</div>
       <div>${sasChips}</div>
@@ -1055,6 +1170,10 @@ function fmtTime(s: number): string {
   if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
   if (m > 0) return `${m}m${String(sec).padStart(2, "0")}s`;
   return `${sec}s`;
+}
+
+function angularDistance(a: number, b: number): number {
+  return Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
 }
 
 // Fixed-segment circle as a flat point array. Bounded cost regardless of radius

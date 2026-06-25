@@ -19,6 +19,17 @@ export interface Body {
   soi: number; // sphere of influence radius (Infinity for sun)
 }
 
+export interface Landmark {
+  id: string;
+  body: string;
+  name: string;
+  description: string;
+  angle: number;
+  radius: number;
+  color: number;
+  accent: number;
+}
+
 function mkBody(b: Partial<Body> & Pick<Body, "id" | "name" | "color" | "GM" | "radius">): Body {
   return {
     atmoHeight: 0,
@@ -34,9 +45,93 @@ function mkBody(b: Partial<Body> & Pick<Body, "id" | "name" | "color" | "GM" | "
   };
 }
 
+export const LANDMARKS: Landmark[] = [
+  {
+    id: "terra-old-pad",
+    body: "terra",
+    name: "Old Launch Pad",
+    description: "A cracked slab from a previous, deeply optimistic space program.",
+    angle: 1.47,
+    radius: 120,
+    color: 0x6b6256,
+    accent: 0xffd24a,
+  },
+  {
+    id: "terra-glow-reef",
+    body: "terra",
+    name: "Glow Reef",
+    description: "Blue-green stones hum whenever rocket exhaust gets close.",
+    angle: 2.58,
+    radius: 190,
+    color: 0x3a7d8c,
+    accent: 0x7bff7b,
+  },
+  {
+    id: "luna-bell",
+    body: "luna",
+    name: "Silent Bell",
+    description: "A moon bell with no air to ring in, which feels rude.",
+    angle: 0.22,
+    radius: 95,
+    color: 0xb9b2a0,
+    accent: 0xfff2c8,
+  },
+  {
+    id: "luna-arch",
+    body: "luna",
+    name: "Bone Arch",
+    description: "Nobody is saying it is alien. Nobody is saying it is not.",
+    angle: 3.85,
+    radius: 130,
+    color: 0xd8cab0,
+    accent: 0x9ec7e0,
+  },
+  {
+    id: "rusty-furnace",
+    body: "rusty",
+    name: "Furnace Crater",
+    description: "The ground is warm, the rocks are angry, and the science is free.",
+    angle: 5.34,
+    radius: 180,
+    color: 0xc84b31,
+    accent: 0xff8a3d,
+  },
+  {
+    id: "rusty-face",
+    body: "rusty",
+    name: "Face-Like Mountain",
+    description: "A mountain that looks exactly like a mountain pretending to be a face.",
+    angle: 1.91,
+    radius: 160,
+    color: 0x8a4a35,
+    accent: 0xffd24a,
+  },
+  {
+    id: "frost-lantern",
+    body: "frost",
+    name: "Ice Lantern",
+    description: "A frozen tower with a tiny light still blinking inside.",
+    angle: 0.78,
+    radius: 170,
+    color: 0xa9cbe0,
+    accent: 0x5bd1ff,
+  },
+  {
+    id: "frost-whale",
+    body: "frost",
+    name: "Buried Whale",
+    description: "A long ridge under the ice. Probably geological. Probably.",
+    angle: 4.55,
+    radius: 220,
+    color: 0xcfe6f2,
+    accent: 0x7fb6e0,
+  },
+];
+
 export class World {
   bodies: Body[];
   byId: Map<string, Body>;
+  landmarks = LANDMARKS;
   time = 0;
 
   constructor() {
@@ -153,5 +248,15 @@ export class World {
 
   altitudeAbove(pos: Vec2, body: Body): number {
     return V.len(V.sub(pos, body.pos)) - body.radius;
+  }
+
+  landmarksFor(bodyId: string): Landmark[] {
+    return this.landmarks.filter((landmark) => landmark.body === bodyId);
+  }
+
+  landmarkPosition(landmark: Landmark): Vec2 {
+    const body = this.get(landmark.body);
+    const up = V.fromAngle(landmark.angle);
+    return V.add(body.pos, V.scale(up, body.radius));
   }
 }

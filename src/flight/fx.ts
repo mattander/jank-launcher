@@ -20,6 +20,7 @@ const MAX_PARTICLES = 2400;
 export class Particles implements Fx {
   parts: Particle[] = [];
   onBoom?: (size: number) => void; // optional audio hook
+  onCrash?: (speed: number, destroyedParts: number) => void;
 
   private push(p: Partial<Particle> & Pick<Particle, "pos" | "vel" | "life" | "size" | "color">) {
     this.parts.push({
@@ -58,6 +59,36 @@ export class Particles implements Fx {
       });
     }
     this.push({ pos, vel: { x: 0, y: 0 }, life: 0.35, size: size * 8, color: 0xfff2c8, ring: true });
+  }
+
+  crash(pos: Vec2, speed: number, destroyedParts: number) {
+    this.onCrash?.(speed, destroyedParts);
+    const severity = Math.min(4, Math.max(1, speed / 18));
+    const sparks = Math.round(18 + severity * 16 + destroyedParts * 6);
+    for (let i = 0; i < sparks; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.4;
+      const sp = (60 + Math.random() * 180) * severity;
+      this.push({
+        pos,
+        vel: V.fromAngle(a, sp),
+        life: 0.25 + Math.random() * 0.35,
+        size: 2 + Math.random() * 4,
+        color: Math.random() < 0.65 ? 0xffd24a : 0xfff2c8,
+        glow: true,
+        grow: -5,
+      });
+    }
+    for (let i = 0; i < 10 + severity * 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.push({
+        pos,
+        vel: V.fromAngle(a, 10 + Math.random() * 55),
+        life: 1 + Math.random() * 1.2,
+        size: 8 + Math.random() * 14,
+        color: Math.random() < 0.5 ? 0x6b6256 : 0x8a8175,
+        grow: 18,
+      });
+    }
   }
 
   // celebratory multi-colour burst (fireworks)

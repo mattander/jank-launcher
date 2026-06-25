@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name jank-launcher --branch main",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

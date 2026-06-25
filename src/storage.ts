@@ -12,19 +12,20 @@ export interface Flag {
 export interface GameLog {
   visited: string[];
   flags: Flag[];
+  discoveries: string[];
 }
 
 export function loadLog(): GameLog {
   try {
     const raw = localStorage.getItem(LOG_KEY);
     if (raw) {
-      const l = JSON.parse(raw) as GameLog;
-      return { visited: l.visited ?? [], flags: l.flags ?? [] };
+      const parsed: unknown = JSON.parse(raw);
+      return parseLog(parsed);
     }
   } catch {
     /* ignore */
   }
-  return { visited: [], flags: [] };
+  return emptyLog();
 }
 
 export function saveLog(log: GameLog) {
@@ -33,6 +34,38 @@ export function saveLog(log: GameLog) {
   } catch {
     /* ignore */
   }
+}
+
+function emptyLog(): GameLog {
+  return { visited: [], flags: [], discoveries: [] };
+}
+
+function parseLog(value: unknown): GameLog {
+  if (!isRecord(value)) return emptyLog();
+  return {
+    visited: stringArray(value.visited),
+    flags: flagArray(value.flags),
+    discoveries: stringArray(value.discoveries),
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+}
+
+function flagArray(value: unknown): Flag[] {
+  if (!Array.isArray(value)) return [];
+  const flags: Flag[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    if (typeof item.body !== "string" || typeof item.angle !== "number") continue;
+    flags.push({ body: item.body, angle: item.angle });
+  }
+  return flags;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export interface SaveFile {

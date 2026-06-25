@@ -4,7 +4,7 @@ import { assembleVessel, Fx } from "./vessel";
 import { Design } from "../build/design";
 import { getPart, partWetMass } from "../parts/catalog";
 
-const noFx: Fx = { explosion() {}, puff() {}, smoke() {}, ember() {}, fireworks() {} };
+const noFx: Fx = { explosion() {}, crash() {}, puff() {}, smoke() {}, ember() {}, fireworks() {} };
 
 const twoStage: Design = {
   name: "T",
