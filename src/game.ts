@@ -13,7 +13,7 @@ export class Game {
   constructor(app: Application) {
     this.app = app;
     this.builder = new Builder(app, (d) => this.launch(d));
-    this.flight = new FlightScene(app, () => this.toBuild());
+    this.flight = new FlightScene(app, () => this.toBuild(), () => this.restartFlight());
 
     app.stage.addChild(this.builder.layer);
     app.stage.addChild(this.flight.layer);
@@ -36,6 +36,11 @@ export class Game {
     this.builder.hide();
     this.flight.show();
     this.flight.start(d);
+  }
+
+  private restartFlight() {
+    if (this.mode !== "flight") return;
+    this.flight.restart();
   }
 
   private toBuild() {

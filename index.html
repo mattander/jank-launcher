@@ -112,6 +112,12 @@
       }
       button:hover { background: var(--paper3); transform: translateY(-1px); }
       button:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(42, 33, 24, 0.45); }
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+        transform: none;
+        box-shadow: none;
+      }
       button:focus-visible,
       .chip:focus-visible {
         outline: 3px solid color-mix(in srgb, var(--accent2) 55%, white);
@@ -178,6 +184,74 @@
         font-size: 12px;
         letter-spacing: 0;
       }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(13, 16, 32, 0.42);
+        pointer-events: auto;
+        z-index: 20;
+      }
+      .modal {
+        width: min(720px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        overflow: auto;
+        background: var(--paper);
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        box-shadow: 0 2px 0 rgba(42, 33, 24, 0.55), 0 18px 48px rgba(13, 16, 32, 0.28);
+        padding: 12px;
+      }
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: start;
+        margin-bottom: 10px;
+      }
+      .stock-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 8px;
+      }
+      .stock-card {
+        border: 2px solid var(--ink);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--paper2) 82%, white);
+        padding: 9px;
+        box-shadow: 0 2px 0 rgba(42, 33, 24, 0.35);
+      }
+      .stock-card h3 { margin-bottom: 5px; }
+      .stock-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 7px 0;
+      }
+      .mini-pill {
+        display: inline-block;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 6px;
+        color: var(--ink-soft);
+        font-size: 11px;
+        background: rgba(255, 247, 230, 0.48);
+      }
+      .checklist {
+        display: grid;
+        gap: 4px;
+        margin-top: 7px;
+      }
+      .check-item {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 5px;
+        align-items: start;
+        color: var(--ink-soft);
+      }
+      .check-item.ok { color: var(--good); }
+      .check-item.warn { color: var(--danger); }
     </style>
   </head>
   <body>

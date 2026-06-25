@@ -10,7 +10,7 @@ import {
   computeStats,
 } from "./design";
 import { computeStages } from "./staging";
-import { stockDesigns } from "./stock";
+import { StockDesign, stockCatalog } from "./stock";
 import * as storage from "../storage";
 
 const BODY_NAMES: Record<string, string> = {
@@ -30,6 +30,11 @@ const CATEGORY_LABEL: Record<PartCategory, string> = {
   weapon: "💥 Weapons",
 };
 
+interface ChecklistItem {
+  ok: boolean;
+  text: string;
+}
+
 export class Builder {
   app: Application;
   layer = new Container();
@@ -47,6 +52,9 @@ export class Builder {
   private lastPointer: Vec2 = { x: 0, y: 0 };
   private cursorWorld: Vec2 = { x: 0, y: 0 };
   private symmetry = 1; // 1 = off, 2 = mirror
+  private undoStack: Design[] = [];
+  private redoStack: Design[] = [];
+  private dragStartDesign: Design | null = null;
 
   // DOM
   private gridEl!: HTMLDivElement;
@@ -55,6 +63,7 @@ export class Builder {
   private actionsEl!: HTMLDivElement;
   private hintEl!: HTMLDivElement;
   private stagingEl!: HTMLDivElement;
+  private modalEl: HTMLDivElement | null = null;
 
   constructor(app: Application, onLaunch: (d: Design) => void) {
     this.app = app;
@@ -84,6 +93,7 @@ export class Builder {
     this.layer.visible = false;
     this.setDomVisible(false);
     this.cancelPlacing();
+    this.closeModal();
   }
 
   resize() {
@@ -181,14 +191,17 @@ export class Builder {
 
   private renderActions() {
     this.actionsEl.innerHTML = "";
-    const mk = (label: string, cls: string, fn: () => void) => {
+    const mk = (label: string, cls: string, fn: () => void, disabled = false) => {
       const b = document.createElement("button");
       b.textContent = label;
       if (cls) b.className = cls;
       b.onclick = fn;
+      b.disabled = disabled;
       this.actionsEl.appendChild(b);
     };
     mk("🚀 Launch", "primary", () => this.launch());
+    mk("↶ Undo", "", () => this.undo(), this.undoStack.length === 0);
+    mk("↷ Redo", "", () => this.redo(), this.redoStack.length === 0);
     mk("📦 Stock", "", () => this.openStock());
     mk("💾 Save", "", () => this.save());
     mk("📂 Load", "", () => this.openLoad());
@@ -196,13 +209,16 @@ export class Builder {
     mk("⬆ Import", "", async () => {
       const d = await storage.importDesign();
       if (d) {
-        this.design = d;
-        this.render();
+        this.remember();
+        this.replaceDesign(d, `Imported "${d.name}"`);
       }
     });
     mk("🧹 Clear", "", () => {
+      if (this.design.parts.length === 0) return;
+      this.remember();
       this.design = emptyDesign();
       this.render();
+      this.flashHint("Cleared rocket");
     });
     const symBtn = document.createElement("button");
     symBtn.textContent = this.symmetry === 2 ? "⧉ 2×" : "⧉ 1×";
@@ -218,24 +234,122 @@ export class Builder {
     this.flashHint(this.symmetry === 2 ? "Symmetry ON — side parts mirror" : "Symmetry off");
   }
 
+  private remember() {
+    this.undoStack.push(cloneDesign(this.design));
+    if (this.undoStack.length > 80) this.undoStack.shift();
+    this.redoStack = [];
+    this.renderActions();
+  }
+
+  private replaceDesign(design: Design, message: string) {
+    this.design = cloneDesign(design);
+    this.cancelPlacing();
+    this.render();
+    this.renderActions();
+    this.flashHint(message);
+  }
+
+  private undo() {
+    const previous = this.undoStack.pop();
+    if (!previous) return;
+    this.redoStack.push(cloneDesign(this.design));
+    this.replaceDesign(previous, "Undid last edit");
+  }
+
+  private redo() {
+    const next = this.redoStack.pop();
+    if (!next) return;
+    this.undoStack.push(cloneDesign(this.design));
+    this.replaceDesign(next, "Redid edit");
+  }
+
+  private commitDragIfChanged() {
+    if (!this.dragStartDesign) return;
+    if (!sameDesign(this.dragStartDesign, this.design)) {
+      this.undoStack.push(this.dragStartDesign);
+      if (this.undoStack.length > 80) this.undoStack.shift();
+      this.redoStack = [];
+      this.renderActions();
+    }
+    this.dragStartDesign = null;
+  }
+
   private save() {
     const name = prompt("Name this rocket:", this.design.name);
     if (!name) return;
+    if (name !== this.design.name) this.remember();
     this.design.name = name;
     storage.saveDesign(this.design);
+    this.render();
     this.flashHint(`Saved "${name}"`);
   }
 
   private openStock() {
-    const designs = stockDesigns();
-    const names = designs.map((d) => d.name);
-    const pick = prompt(`Load a stock rocket?\n\n${names.join("\n")}`, names[0]);
-    if (!pick) return;
-    const found = designs.find((d) => d.name.toLowerCase() === pick.trim().toLowerCase());
-    if (!found) return this.flashHint(`No stock rocket "${pick}"`);
-    this.design = structuredClone(found);
-    this.render();
-    this.flashHint(`Loaded stock "${found.name}"`);
+    this.openStockPicker(stockCatalog());
+  }
+
+  private openStockPicker(items: StockDesign[]) {
+    this.closeModal();
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.onclick = (event) => {
+      if (event.target === backdrop) this.closeModal();
+    };
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    backdrop.appendChild(modal);
+
+    const head = document.createElement("div");
+    head.className = "modal-head";
+    head.innerHTML = "<div><h2>📦 Stock Rockets</h2><div class='muted'>Pick a ready-made craft and start iterating.</div></div>";
+    const close = document.createElement("button");
+    close.textContent = "Close";
+    close.onclick = () => this.closeModal();
+    head.appendChild(close);
+    modal.appendChild(head);
+
+    const list = document.createElement("div");
+    list.className = "stock-list";
+    for (const item of items) list.appendChild(this.stockCard(item));
+    modal.appendChild(list);
+
+    document.body.appendChild(backdrop);
+    this.modalEl = backdrop;
+  }
+
+  private stockCard(item: StockDesign): HTMLDivElement {
+    const card = document.createElement("div");
+    card.className = "stock-card";
+    const stats = computeStats(item.design);
+    const tags = item.tags.map((tag) => `<span class="mini-pill">${escapeHtml(tag)}</span>`).join("");
+    card.innerHTML = `
+      <h3>${escapeHtml(item.design.name)}</h3>
+      <div class="muted">${escapeHtml(item.purpose)}</div>
+      <div class="stock-meta">
+        <span class="mini-pill">${item.difficulty}</span>
+        <span class="mini-pill">${item.design.parts.length} parts</span>
+        <span class="mini-pill">TWR ${stats.twr.toFixed(2)}</span>
+        <span class="mini-pill">${stats.deltaV.toFixed(0)} m/s Δv</span>
+        ${tags}
+      </div>`;
+    const load = document.createElement("button");
+    load.className = "primary";
+    load.textContent = "Load";
+    load.onclick = () => {
+      this.remember();
+      this.design = cloneDesign(item.design);
+      this.closeModal();
+      this.render();
+      this.flashHint(`Loaded stock "${item.design.name}"`);
+    };
+    card.appendChild(load);
+    return card;
+  }
+
+  private closeModal() {
+    this.modalEl?.remove();
+    this.modalEl = null;
   }
 
   private openLoad() {
@@ -248,9 +362,8 @@ export class Builder {
     if (!pick) return;
     const d = storage.loadDesign(pick);
     if (d) {
-      this.design = d;
-      this.render();
-      this.flashHint(`Loaded "${pick}"`);
+      this.remember();
+      this.replaceDesign(d, `Loaded "${pick}"`);
     }
   }
 
@@ -365,6 +478,18 @@ export class Builder {
     c.addEventListener("contextmenu", (e) => this.onContext(e));
     window.addEventListener("keydown", (e) => {
       if (!this.layer.visible) return;
+      const key = e.key.toLowerCase();
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        this.undo();
+        return;
+      }
+      if ((mod && key === "y") || (mod && key === "z" && e.shiftKey)) {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
       if (e.key.toLowerCase() === "x") this.toggleSymmetry();
       if (e.key === "Escape" && this.placing) { this.cancelPlacing(); this.render(); }
     });
@@ -437,6 +562,7 @@ export class Builder {
     if (!this.layer.visible || e.button !== 0) return;
     this.cursorWorld = this.pointerWorld(e);
     if (this.placing && this.ghost) {
+      this.remember();
       const part: PlacedPart = {
         uid: newUid(),
         defId: this.placing.id,
@@ -453,6 +579,7 @@ export class Builder {
     const hit = this.hitTest(this.cursorWorld);
     if (hit) {
       this.dragUid = hit.uid;
+      this.dragStartDesign = cloneDesign(this.design);
     } else {
       this.panning = true;
       const rect = this.app.canvas.getBoundingClientRect();
@@ -461,6 +588,7 @@ export class Builder {
   }
 
   private onUp() {
+    this.commitDragIfChanged();
     this.dragUid = null;
     this.panning = false;
   }
@@ -474,8 +602,10 @@ export class Builder {
     }
     const hit = this.hitTest(this.pointerWorld(e));
     if (hit) {
+      this.remember();
       this.deleteSubtree(hit.uid);
       this.render();
+      this.flashHint("Deleted part group");
     }
   }
 
@@ -632,8 +762,26 @@ export class Builder {
         <span>Δv est.</span><b>${s.deltaV.toFixed(0)} m/s</b>
       </div>
       ${s.twr > 0 && s.twr < 1 ? '<div style="color:#c84b31">⚠ TWR &lt; 1 — won\'t lift off!</div>' : ""}
+      ${this.preflightChecklist()}
       ${this.exploredLine()}
     `;
+  }
+
+  private preflightChecklist(): string {
+    const stats = computeStats(this.design);
+    const parts = this.design.parts.map((p) => getPart(p.defId));
+    const checks: ChecklistItem[] = [
+      { ok: stats.hasCommand, text: "Command pod or probe core" },
+      { ok: stats.hasEngine, text: "Engine installed" },
+      { ok: stats.twr >= 1.05, text: "Launch TWR above 1.05" },
+      { ok: parts.some((p) => p.parachute), text: "Recovery parachute" },
+      { ok: parts.some((p) => p.decoupler), text: "Stage separator" },
+      { ok: parts.some((p) => p.landingLeg), text: "Landing legs for off-world touchdowns" },
+    ];
+    const rows = checks
+      .map((item) => `<div class="check-item ${item.ok ? "ok" : "warn"}"><span>${item.ok ? "✓" : "!"}</span><span>${item.text}</span></div>`)
+      .join("");
+    return `<div class="section-label">Pre-launch</div><div class="checklist">${rows}</div>`;
   }
 
   private exploredLine(): string {
@@ -654,4 +802,37 @@ function clamp(v: number, lo: number, hi: number) {
 }
 function escapeHtml(s: string) {
   return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+}
+
+function cloneDesign(design: Design): Design {
+  return {
+    name: design.name,
+    parts: design.parts.map((part) => ({
+      uid: part.uid,
+      defId: part.defId,
+      x: part.x,
+      y: part.y,
+      flip: part.flip,
+      parentUid: part.parentUid,
+    })),
+  };
+}
+
+function sameDesign(a: Design, b: Design): boolean {
+  if (a.name !== b.name || a.parts.length !== b.parts.length) return false;
+  for (let i = 0; i < a.parts.length; i++) {
+    const ap = a.parts[i];
+    const bp = b.parts[i];
+    if (
+      ap.uid !== bp.uid ||
+      ap.defId !== bp.defId ||
+      ap.x !== bp.x ||
+      ap.y !== bp.y ||
+      ap.flip !== bp.flip ||
+      ap.parentUid !== bp.parentUid
+    ) {
+      return false;
+    }
+  }
+  return true;
 }

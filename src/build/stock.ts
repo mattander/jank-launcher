@@ -1,6 +1,13 @@
 import { Design, PlacedPart } from "./design";
 import { getPart } from "../parts/catalog";
 
+export interface StockDesign {
+  design: Design;
+  purpose: string;
+  difficulty: "Easy" | "Medium" | "Spicy";
+  tags: string[];
+}
+
 // Author stock craft with a tiny layout helper so node alignment is automatic.
 let uid = 0;
 const id = () => `s${uid++}`;
@@ -40,63 +47,87 @@ function build(name: string, fn: (parts: PlacedPart[]) => void): Design {
 }
 
 export function stockDesigns(): Design[] {
+  return stockCatalog().map((entry) => entry.design);
+}
+
+export function stockCatalog(): StockDesign[] {
   return [
     // --- sounding rocket: pops straight up, chute down ---
-    build("Lil' Hopper", (p) => {
-      const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-small" }, { defId: "engine-main" }], 6);
-      p.push(...s);
-      const pod = s[0], tank = s[1];
-      p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
-      p.push(radial("fin", -1.0, tank.y - 0.5, false, tank.uid));
-      p.push(radial("fin", 1.0, tank.y - 0.5, true, tank.uid));
-    }),
+    {
+      design: build("Lil' Hopper", (p) => {
+        const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-small" }, { defId: "engine-main" }], 6);
+        p.push(...s);
+        const pod = s[0], tank = s[1];
+        p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
+        p.push(radial("fin", -1.0, tank.y - 0.5, false, tank.uid));
+        p.push(radial("fin", 1.0, tank.y - 0.5, true, tank.uid));
+      }),
+      purpose: "A forgiving first launch for hops, splashdowns, and learning staging.",
+      difficulty: "Easy",
+      tags: ["Suborbital", "Parachute", "Stable"],
+    },
 
     // --- single-stack orbiter: ~4 km/s dv, comfortably reaches Terra orbit ---
-    build("Orbit Express", (p) => {
-      const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-large" }, { defId: "engine-main" }], 7);
-      p.push(...s);
-      const pod = s[0], tank = s[1];
-      p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
-      p.push(radial("fin", -1.15, tank.y - 1.6, false, tank.uid));
-      p.push(radial("fin", 1.15, tank.y - 1.6, true, tank.uid));
-    }),
+    {
+      design: build("Orbit Express", (p) => {
+        const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-large" }, { defId: "engine-main" }], 7);
+        p.push(...s);
+        const pod = s[0], tank = s[1];
+        p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
+        p.push(radial("fin", -1.15, tank.y - 1.6, false, tank.uid));
+        p.push(radial("fin", 1.15, tank.y - 1.6, true, tank.uid));
+      }),
+      purpose: "A clean single-stack ship for reaching orbit without much fuss.",
+      difficulty: "Easy",
+      tags: ["Orbit", "Simple", "Recovery"],
+    },
 
     // --- two-stage Moon craft: drop the booster, finish on the efficient upper ---
-    build("Luna Runner", (p) => {
-      const s = vstack(
-        [
-          { defId: "pod-mk1" },
-          { defId: "tank-small" },
-          { defId: "engine-small" },
-          { defId: "decoupler" },
-          { defId: "tank-large" },
-          { defId: "engine-main" },
-        ],
-        7,
-      );
-      p.push(...s);
-      const pod = s[0], upperTank = s[1], lowerTank = s[4];
-      p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
-      p.push(radial("landing-leg", -1.1, upperTank.y - 0.9, false, upperTank.uid));
-      p.push(radial("landing-leg", 1.1, upperTank.y - 0.9, true, upperTank.uid));
-      p.push(radial("fin", -1.15, lowerTank.y - 1.7, false, lowerTank.uid));
-      p.push(radial("fin", 1.15, lowerTank.y - 1.7, true, lowerTank.uid));
-    }),
+    {
+      design: build("Luna Runner", (p) => {
+        const s = vstack(
+          [
+            { defId: "pod-mk1" },
+            { defId: "tank-small" },
+            { defId: "engine-small" },
+            { defId: "decoupler" },
+            { defId: "tank-large" },
+            { defId: "engine-main" },
+          ],
+          7,
+        );
+        p.push(...s);
+        const pod = s[0], upperTank = s[1], lowerTank = s[4];
+        p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
+        p.push(radial("landing-leg", -1.1, upperTank.y - 0.9, false, upperTank.uid));
+        p.push(radial("landing-leg", 1.1, upperTank.y - 0.9, true, upperTank.uid));
+        p.push(radial("fin", -1.15, lowerTank.y - 1.7, false, lowerTank.uid));
+        p.push(radial("fin", 1.15, lowerTank.y - 1.7, true, lowerTank.uid));
+      }),
+      purpose: "Two stages, landing legs, and enough ambition to make Luna nervous.",
+      difficulty: "Medium",
+      tags: ["Moon", "Two-stage", "Landing"],
+    },
 
     // --- gunship: orbit-capable with cannon, laser and missiles ---
-    build("Bug Zapper", (p) => {
-      const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-large" }, { defId: "engine-main" }], 7);
-      p.push(...s);
-      const pod = s[0], tank = s[1];
-      p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
-      p.push(radial("cannon", -1.6, tank.y + 1.4, false, tank.uid));
-      p.push(radial("cannon", 1.6, tank.y + 1.4, true, tank.uid));
-      p.push(radial("laser", -1.6, tank.y, false, tank.uid));
-      p.push(radial("laser", 1.6, tank.y, true, tank.uid));
-      p.push(radial("missile-rack", -1.7, tank.y - 1.4, false, tank.uid));
-      p.push(radial("missile-rack", 1.7, tank.y - 1.4, true, tank.uid));
-      p.push(radial("fin", -1.15, tank.y - 1.9, false, tank.uid));
-      p.push(radial("fin", 1.15, tank.y - 1.9, true, tank.uid));
-    }),
+    {
+      design: build("Bug Zapper", (p) => {
+        const s = vstack([{ defId: "pod-mk1" }, { defId: "tank-large" }, { defId: "engine-main" }], 7);
+        p.push(...s);
+        const pod = s[0], tank = s[1];
+        p.push(radial("parachute", 0, pod.y + 1.5, false, pod.uid));
+        p.push(radial("cannon", -1.6, tank.y + 1.4, false, tank.uid));
+        p.push(radial("cannon", 1.6, tank.y + 1.4, true, tank.uid));
+        p.push(radial("laser", -1.6, tank.y, false, tank.uid));
+        p.push(radial("laser", 1.6, tank.y, true, tank.uid));
+        p.push(radial("missile-rack", -1.7, tank.y - 1.4, false, tank.uid));
+        p.push(radial("missile-rack", 1.7, tank.y - 1.4, true, tank.uid));
+        p.push(radial("fin", -1.15, tank.y - 1.9, false, tank.uid));
+        p.push(radial("fin", 1.15, tank.y - 1.9, true, tank.uid));
+      }),
+      purpose: "Orbit-capable trouble with cannons, lasers, and missiles.",
+      difficulty: "Spicy",
+      tags: ["Combat", "Orbit", "Weapons"],
+    },
   ];
 }

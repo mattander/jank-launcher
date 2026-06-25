@@ -36,6 +36,8 @@ export class FlightScene {
   vessels: Vessel[] = [];
   player: Vessel | null = null;
   onExit: () => void;
+  onRestart: () => void;
+  private currentDesign: Design | null = null;
 
   private keys = new Set<string>();
   private throttle = 0;
@@ -71,9 +73,10 @@ export class FlightScene {
   private gFlame = new Graphics();
   private stars: Vec2[] = [];
 
-  constructor(app: Application, onExit: () => void) {
+  constructor(app: Application, onExit: () => void, onRestart: () => void) {
     this.app = app;
     this.onExit = onExit;
+    this.onRestart = onRestart;
     this.layer.addChild(this.gSky, this.gBodies, this.gTraj, this.gParticles, this.gFlame, this.vesselsLayer, this.gProj, this.gAim, this.gNav, this.gMap);
     this.cam.zoom = 8;
     this.buildDom();
@@ -83,6 +86,7 @@ export class FlightScene {
 
   // ---------------- lifecycle ----------------
   start(design: Design) {
+    this.currentDesign = cloneDesign(design);
     this.vessels = [];
     this.partSprites.forEach((s) => s.destroy());
     this.partSprites.clear();
@@ -127,6 +131,12 @@ export class FlightScene {
     this.cam.zoom = 10;
     this.lastBodyId = "terra";
     this.toast("🚀 Cleared for launch. Throttle up with W!");
+  }
+
+  restart() {
+    if (!this.currentDesign) return;
+    this.start(this.currentDesign);
+    this.toast("↻ Launch restarted");
   }
 
   show() {
@@ -180,6 +190,7 @@ export class FlightScene {
     const k = e.key.toLowerCase();
     if (down) {
       if (k === "escape") return this.onExit();
+      if (k === "backspace") { this.onRestart(); e.preventDefault(); }
       if (k === " ") { this.stageEdge = true; this.audio.stage(); e.preventDefault(); }
       if (k === "f") this.firing = true;
       if (k === "tab") { this.cycleWeapon(); e.preventDefault(); }
@@ -1027,7 +1038,7 @@ export class FlightScene {
     this.helpEl.innerHTML =
       "<b>A/D</b> rotate · <b>W/S</b> throttle · <b>Shift/Ctrl</b> full/cut · " +
       "<b>T</b> SAS · <b>Space</b> stage · <b>R</b> RCS · <b>Mouse</b> aim · <b>Click/F</b> fire · " +
-      "<b>Tab</b> weapon · <b>M</b> map · <b>,/.</b> warp · <b>N</b> mute · <b>Esc</b> hangar";
+      "<b>Tab</b> weapon · <b>M</b> map · <b>,/.</b> warp · <b>N</b> mute · <b>Backspace</b> restart · <b>Esc</b> hangar";
     inGrid(this.helpEl, "help", "end", "end");
 
     this.toastEl = document.createElement("div");
@@ -1101,6 +1112,11 @@ export class FlightScene {
         <span>RCS</span><b>${this.rcs ? "on" : "off"}</b>
         <span>Next ⎵</span><b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b>
       </div>`;
+    const restartButton = document.createElement("button");
+    restartButton.textContent = "↻ Restart Launch";
+    restartButton.style.marginTop = "8px";
+    restartButton.onclick = () => this.onRestart();
+    this.gaugesEl.appendChild(restartButton);
 
     // status (warp + weapon group chips)
     const kinds = this.availableWeaponKinds();
@@ -1264,4 +1280,18 @@ function mkPanel(): HTMLDivElement {
   d.className = "panel";
   d.style.position = "absolute";
   return d;
+}
+
+function cloneDesign(design: Design): Design {
+  return {
+    name: design.name,
+    parts: design.parts.map((part) => ({
+      uid: part.uid,
+      defId: part.defId,
+      x: part.x,
+      y: part.y,
+      flip: part.flip,
+      parentUid: part.parentUid,
+    })),
+  };
 }
