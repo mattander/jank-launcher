@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Jank Launcher rocket logo, dark mode</title>
+  <desc id="desc">A simple hand-drawn boxy rocket tuned for dark backgrounds.</desc>
+  <defs>
+    <filter id="wobble" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="7" result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.05" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </defs>
+  <g fill="none" stroke="#fff7e6" stroke-linecap="round" stroke-linejoin="round" filter="url(#wobble)">
+    <path d="M163 345c-31 9-59 28-82 55 38-3 70-14 97-33" fill="#4ea2b2" stroke-width="17" />
+    <path d="M193 365c-7 40-3 77 12 110 22-31 35-64 39-98" fill="#e06042" stroke-width="17" />
+    <path d="M181 334c-19 11-35 24-49 39 3-28 13-51 30-70" fill="#fff7e6" stroke-width="15" />
+    <path d="M328 178c37-56 75-89 116-101-11 46-43 86-96 123" fill="#e06042" stroke-width="17" />
+    <path d="M151 321 220 204c44-58 105-99 224-127-24 112-64 174-122 220L201 361c-25 13-45-6-50-40Z" fill="#fff7e6" stroke-width="19" />
+    <path d="M241 322c-18 29-45 52-80 67 9-35 26-62 50-79" fill="#4ea2b2" stroke-width="17" />
+    <path d="M205 262c24 16 47 38 67 66" stroke="#2a2118" stroke-width="12" />
+    <path d="M305 158c35 8 63 29 83 60" stroke="#2a2118" stroke-width="12" />
+    <path d="M184 345 323 270" stroke="#2a2118" stroke-width="9" opacity="0.55" />
+    <circle cx="314" cy="206" r="32" fill="#dff5ff" stroke="#2a2118" stroke-width="15" />
+    <circle cx="322" cy="197" r="9" fill="#fff7e6" stroke="none" />
+    <path d="M225 278c15 8 31 5 46-8" stroke="#2a2118" stroke-width="11" />
+    <path d="M123 372c-27 14-50 32-68 56 31-10 56-14 76-11-18 13-33 29-45 48 28-12 53-17 76-16" stroke="#f0a24f" stroke-width="16" />
+    <path d="M112 393c-16 8-29 19-39 34 18-7 34-10 48-9" stroke="#fff7e6" stroke-width="9" />
+  </g>
+</svg>
