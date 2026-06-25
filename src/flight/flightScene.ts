@@ -3,8 +3,8 @@ import { Camera, REF_PPM } from "../camera";
 import { Vec2, V } from "../types";
 import { Design } from "../build/design";
 import { drawPart, drawFairingShroud, WeaponSpec } from "../parts/catalog";
-import { Landmark, World } from "./world";
-import { orbit, conicPath, orbitTiming } from "./orbit";
+import { Body, Landmark, World } from "./world";
+import { orbit, conicPath, impactPreview, orbitTiming } from "./orbit";
 import { Vessel, assembleVessel, VesselInput } from "./vessel";
 import { Combat } from "./weapons";
 import { Particles } from "./fx";
@@ -58,6 +58,7 @@ export class FlightScene {
   private log: GameLog = loadLog();
   private wasLanded = false;
   private lastCrashToast = -999;
+  private hudTimer = 1;
 
   private gridEl!: HTMLDivElement;
   private navEl!: HTMLDivElement;
@@ -67,6 +68,7 @@ export class FlightScene {
   private helpEl!: HTMLDivElement;
   private gNav = new Graphics();
   private gFlame = new Graphics();
+  private stars: Vec2[] = [];
 
   constructor(app: Application, onExit: () => void) {
     this.app = app;
@@ -105,6 +107,7 @@ export class FlightScene {
     this.comboTimer = 0;
     this.wasLanded = false;
     this.lastCrashToast = -999;
+    this.hudTimer = 1;
 
     const v = assembleVessel(design);
     this.player = v;
@@ -145,6 +148,7 @@ export class FlightScene {
     // (resolution-scaled). The stage and mouse coords are logical, so the camera
     // must use logical size or everything mis-centers on HiDPI/Retina displays.
     this.cam.resize(this.app.screen.width, this.app.screen.height);
+    this.rebuildStars();
   }
 
   // ---------------- input ----------------
@@ -344,7 +348,11 @@ export class FlightScene {
     this.checkMilestones();
     this.checkDiscoveries();
     this.render();
-    this.updateHud();
+    this.hudTimer += frameDt;
+    if (this.hudTimer >= 1 / 12) {
+      this.hudTimer = 0;
+      this.updateHud();
+    }
   }
 
   private fireWeapons() {
@@ -494,15 +502,24 @@ export class FlightScene {
     g.fill({ color: col });
     // stars when high
     if (t > 0.4) {
-      let s = 1234;
-      for (let i = 0; i < 120; i++) {
-        s = (s * 1103515245 + 12345) & 0x7fffffff;
-        const x = (s % this.cam.screenW);
-        s = (s * 1103515245 + 12345) & 0x7fffffff;
-        const y = (s % this.cam.screenH);
-        g.circle(x, y, 1.2);
+      if (this.stars.length === 0) this.rebuildStars();
+      for (const star of this.stars) {
+        g.circle(star.x, star.y, 1.2);
       }
       g.fill({ color: 0xfff2c8, alpha: (t - 0.4) * 1.6 });
+    }
+  }
+
+  private rebuildStars() {
+    this.stars = [];
+    let seed = 1234;
+    const count = 140;
+    for (let i = 0; i < count; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const x = seed % Math.max(1, this.cam.screenW);
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const y = seed % Math.max(1, this.cam.screenH);
+      this.stars.push({ x, y });
     }
   }
 
@@ -796,6 +813,12 @@ export class FlightScene {
     if (clear) g.clear();
     if (!this.player) return;
     const body = this.world.dominantBody(this.player.pos);
+    const currentOrbit = orbit(this.player.pos, this.player.vel, body);
+    if (!currentOrbit.bound || currentOrbit.peri < body.radius * 1.003) {
+      this.drawImpactTrajectory(g, body, alpha);
+      return;
+    }
+
     const path = conicPath(this.player.pos, this.player.vel, body);
     if (!path) return;
 
@@ -822,6 +845,31 @@ export class FlightScene {
     };
     mark(path.apo, 0x7fb6e0); // apoapsis
     mark(path.peri, 0xd98a3d); // periapsis
+  }
+
+  private drawImpactTrajectory(g: Graphics, body: Body, alpha: number) {
+    if (!this.player) return;
+    const pts = impactPreview(this.player.pos, this.player.vel, body);
+    if (pts.length < 2) return;
+
+    const first = this.cam.worldToScreen(pts[0]);
+    g.moveTo(first.x, first.y);
+    for (let i = 1; i < pts.length; i++) {
+      const s = this.cam.worldToScreen(pts[i]);
+      g.lineTo(s.x, s.y);
+    }
+    g.stroke({ color: 0xffd27f, width: 2, alpha });
+
+    const impact = pts[pts.length - 1];
+    const isSurfaceHit = Math.abs(V.len(V.sub(impact, body.pos)) - body.radius) < body.radius * 0.01;
+    if (!isSurfaceHit) return;
+    const s = this.cam.worldToScreen(impact);
+    const r = Math.max(4, Math.min(10, body.radius * this.cam.zoom * 0.015));
+    g.moveTo(s.x - r, s.y - r);
+    g.lineTo(s.x + r, s.y + r);
+    g.moveTo(s.x + r, s.y - r);
+    g.lineTo(s.x - r, s.y + r);
+    g.stroke({ color: 0xff8a3d, width: 2, alpha: Math.min(1, alpha + 0.15), cap: "round" });
   }
 
   private drawAim() {

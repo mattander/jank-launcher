@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { World } from "./world";
-import { orbit, conicPath, orbitTiming } from "./orbit";
+import { orbit, conicPath, impactPreview, orbitTiming } from "./orbit";
 
 describe("orbit (Keplerian elements)", () => {
   const world = new World();
@@ -55,6 +55,23 @@ describe("orbit (Keplerian elements)", () => {
     const pos = { x: terra.pos.x, y: terra.pos.y + r };
     const vel = { x: terra.vel.x, y: terra.vel.y }; // no tangential velocity
     expect(conicPath(pos, vel, terra)).toBeNull();
+  });
+
+  it("anchors suborbital impact previews at the craft and terminates on the surface", () => {
+    const pos = { x: terra.pos.x, y: terra.pos.y + terra.radius + 1000 };
+    const vel = { x: terra.vel.x + 120, y: terra.vel.y + 30 };
+    const pts = impactPreview(pos, vel, terra);
+    expect(pts.length).toBeGreaterThan(2);
+    expect(pts[0]).toEqual(pos);
+    const last = pts[pts.length - 1];
+    const impactR = Math.hypot(last.x - terra.pos.x, last.y - terra.pos.y);
+    expect(impactR).toBeCloseTo(terra.radius, 0);
+  });
+
+  it("does not draw an impact preview while sitting still on the surface", () => {
+    const pos = { x: terra.pos.x, y: terra.pos.y + terra.radius };
+    const pts = impactPreview(pos, terra.vel, terra);
+    expect(pts).toEqual([pos]);
   });
 });
 
