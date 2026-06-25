@@ -127,9 +127,8 @@ export class Combat {
     }
   }
 
-  // Fire a ballistic weapon. `origin` world pos, `dir` unit aim direction.
-  // `aim` is the cursor world point; the round detonates there if it gets that
-  // far without hitting something first.
+  // Fire a ballistic weapon. `origin` is the muzzle world position, `dir` is a
+  // unit aim direction, and `aim` is a range endpoint along that direction.
   fire(origin: Vec2, dir: Vec2, spec: WeaponSpec, ownerVel: Vec2, ownerId: number, fx: Fx, aim: Vec2, world: World) {
     const aimBody = world.dominantBody(aim);
     const targetRel = V.sub(aim, aimBody.pos);
@@ -137,7 +136,7 @@ export class Combat {
     this.projectiles.push({
       pos: { ...origin },
       vel: V.add(ownerVel, V.scale(dir, cannon ? spec.speed : spec.speed * 0.5)),
-      life: cannon ? 4 : 11,
+      life: cannon ? Math.max(0.8, spec.range / spec.speed) : Math.max(4, spec.range / 480),
       damage: spec.damage,
       kind: cannon ? "cannon" : "missile",
       ownerId,

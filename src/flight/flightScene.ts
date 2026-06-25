@@ -168,11 +168,11 @@ export class FlightScene {
     window.addEventListener("keyup", (e) => this.onKey(e, false));
     const c = this.app.canvas;
     c.addEventListener("pointermove", (e) => {
-      const rect = c.getBoundingClientRect();
-      this.aimScreen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      this.aimScreen = this.canvasPoint(e);
     });
     c.addEventListener("pointerdown", (e) => {
       this.audio.resume();
+      this.aimScreen = this.canvasPoint(e);
       if (e.button === 0 && this.layer.visible && !this.mapMode) this.firing = true;
     });
     window.addEventListener("pointerup", () => (this.firing = false));
@@ -182,6 +182,11 @@ export class FlightScene {
       this.cam.zoom *= e.deltaY < 0 ? 1.15 : 1 / 1.15;
       this.cam.clampZoom(this.mapMode ? 1e-7 : 0.02, 60);
     }, { passive: false });
+  }
+
+  private canvasPoint(e: PointerEvent): Vec2 {
+    const rect = this.app.canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   private onKey(e: KeyboardEvent, down: boolean) {
@@ -385,10 +390,11 @@ export class FlightScene {
       }
       const origin = this.player.partWorld(p);
       const dir = V.norm(V.sub(aim, origin));
+      const rangedAim = V.add(origin, V.scale(dir, spec.range));
       if (spec.kind === "laser") {
-        this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels, aim);
+        this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels, rangedAim);
       } else {
-        this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx, aim, this.world);
+        this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx, rangedAim, this.world);
         this.fx.flash(origin, dir, spec.kind === "cannon" ? 0xffd27f : 0xff8a3d);
         if (spec.kind === "cannon") { this.audio.cannon(); this.shake = Math.min(16, this.shake + 1.4); }
         else { this.audio.missile(); this.shake = Math.min(16, this.shake + 2.2); }
@@ -790,7 +796,7 @@ export class FlightScene {
       const dir = V.norm(vRel);
       const tailLen = pr.kind === "missile" ? 22 : 16;
       const head = pr.kind === "missile" ? 4 : 3;
-      const tail = { x: s.x - dir.x * tailLen, y: s.y - dir.y * tailLen };
+      const tail = { x: s.x - dir.x * tailLen, y: s.y + dir.y * tailLen };
       g.moveTo(tail.x, tail.y);
       g.lineTo(s.x, s.y);
       g.stroke({ color: pr.kind === "missile" ? 0xff8a3d : 0xffd27f, width: head, cap: "round" });
