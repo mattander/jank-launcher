@@ -330,6 +330,11 @@ export class FlightScene {
     }
     this.stageEdge = false;
 
+    // The world moves at orbital speed, so screen aim must be converted using
+    // the current camera center. If firing reads last frame's camera, the aim
+    // vector can skew or even appear vertically mirrored.
+    this.followCamera();
+
     // weapons firing (mouse/F), respects per-part cooldown
     if (this.firing && !this.mapMode) this.fireWeapons();
 
@@ -348,15 +353,6 @@ export class FlightScene {
       this.toastOnce("rip", "💀 Your craft is gone. Esc to head back to the hangar.");
     }
 
-    // camera follow — hard-follow the craft. The whole world moves at orbital
-    // speed (~8.8 km/s), so smoothing on absolute position can't keep up and the
-    // craft flies off-screen; track it exactly instead.
-    if (!this.mapMode) {
-      this.cam.center = { ...this.player.pos };
-    } else {
-      // keep the orbit framed: follow the dominant body (it drifts through space)
-      this.cam.center = { ...this.world.dominantBody(this.player.pos).pos };
-    }
     this.shake *= Math.exp(-frameDt * 7); // decay screen shake
     if (this.comboTimer > 0) {
       this.comboTimer -= frameDt;
@@ -370,6 +366,18 @@ export class FlightScene {
     if (this.hudTimer >= 1 / 12) {
       this.hudTimer = 0;
       this.updateHud();
+    }
+  }
+
+  private followCamera() {
+    if (!this.player) return;
+    // Hard-follow the craft. The whole world moves at orbital speed (~8.8 km/s),
+    // so smoothing on absolute position can't keep up and the craft flies off-screen.
+    if (!this.mapMode) {
+      this.cam.center = { ...this.player.pos };
+    } else {
+      // Keep the orbit framed: follow the dominant body as it drifts through space.
+      this.cam.center = { ...this.world.dominantBody(this.player.pos).pos };
     }
   }
 
