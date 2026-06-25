@@ -41,6 +41,63 @@
         padding: 9px 10px;
         line-height: 1.28;
       }
+      .builder-frame {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        grid-template-columns: minmax(250px, 320px) minmax(220px, 1fr) minmax(250px, 320px);
+        grid-template-rows: auto 1fr;
+        grid-template-areas:
+          "left hint right"
+          "left . right";
+        gap: 10px;
+        min-height: 0;
+        padding: 12px;
+        pointer-events: none;
+      }
+      .builder-frame .panel {
+        position: relative;
+      }
+      .builder-rail {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+        max-height: calc(100vh - 24px);
+        pointer-events: auto;
+      }
+      .builder-left { grid-area: left; }
+      .builder-right { grid-area: right; }
+      .builder-palette {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+      .builder-stats {
+        flex: 0 1 auto;
+        min-height: 130px;
+        max-height: 42vh;
+        overflow: auto;
+      }
+      .builder-actions {
+        display: flex;
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .builder-staging {
+        flex: 1 1 auto;
+        min-height: 130px;
+        overflow: auto;
+        font-size: 13px;
+      }
+      .builder-hint {
+        grid-area: hint;
+        align-self: start;
+        justify-self: center;
+        pointer-events: auto;
+      }
       .panel.compact { padding: 7px 9px; }
       .panel h1,
       .panel h2,
@@ -252,6 +309,42 @@
       }
       .check-item.ok { color: var(--good); }
       .check-item.warn { color: var(--danger); }
+      @media (max-width: 900px) {
+        .builder-frame {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto auto auto;
+          grid-template-areas:
+            "hint"
+            "left"
+            "right";
+          align-content: start;
+          overflow: auto;
+          pointer-events: auto;
+        }
+        .builder-rail {
+          max-height: none;
+        }
+        .builder-actions {
+          justify-content: flex-start;
+        }
+        .builder-palette {
+          max-height: 45vh;
+        }
+        .builder-stats,
+        .builder-staging {
+          max-height: 38vh;
+        }
+      }
+      @media (max-width: 560px) {
+        .builder-frame {
+          padding: 8px;
+          gap: 8px;
+        }
+        .parts-grid button,
+        .builder-actions button {
+          min-height: 34px;
+        }
+      }
     </style>
   </head>
   <body>

@@ -58,6 +58,8 @@ export class Builder {
 
   // DOM
   private gridEl!: HTMLDivElement;
+  private leftRailEl!: HTMLDivElement;
+  private rightRailEl!: HTMLDivElement;
   private paletteEl!: HTMLDivElement;
   private statsEl!: HTMLDivElement;
   private actionsEl!: HTMLDivElement;
@@ -103,70 +105,38 @@ export class Builder {
   }
 
   // ---------------- DOM ----------------
-  // A full-screen CSS-grid overlay holds the panels in named areas; empty cells
-  // are pointer-events:none so clicks pass through to the canvas underneath.
+  // A full-screen frame keeps builder panels in scrollable rails so narrow
+  // screens do not let independent cards overlap each other.
   private buildDom() {
     this.gridEl = document.createElement("div");
-    Object.assign(this.gridEl.style, {
-      position: "fixed",
-      inset: "0",
-      display: "grid",
-      padding: "12px",
-      gap: "10px",
-      gridTemplateColumns: "auto 1fr auto",
-      gridTemplateRows: "auto 1fr auto",
-      gridTemplateAreas: `"palette hint actions" "palette . ." "stats . staging"`,
-      pointerEvents: "none",
-    } satisfies Partial<CSSStyleDeclaration>);
+    this.gridEl.className = "builder-frame";
     document.body.appendChild(this.gridEl);
 
-    const inGrid = (el: HTMLDivElement, area: string, justify = "stretch", align = "start") => {
-      el.style.gridArea = area;
-      el.style.justifySelf = justify;
-      el.style.alignSelf = align;
-      el.style.pointerEvents = "auto";
-      this.gridEl.appendChild(el);
-    };
+    this.leftRailEl = div("builder-rail builder-left");
+    this.rightRailEl = div("builder-rail builder-right");
+    this.gridEl.append(this.leftRailEl, this.rightRailEl);
 
-    // palette (left column, top)
     this.paletteScaffold();
-    inGrid(this.paletteEl, "palette", "start", "start");
+    this.paletteEl.classList.add("builder-palette");
+    this.leftRailEl.appendChild(this.paletteEl);
 
-    // stats (bottom-left)
-    this.statsEl = div("panel");
-    this.statsEl.style.minWidth = "230px";
-    inGrid(this.statsEl, "stats", "start", "end");
+    this.statsEl = div("panel builder-stats");
+    this.leftRailEl.appendChild(this.statsEl);
 
-    // actions (top-right)
-    this.actionsEl = div("panel");
-    this.actionsEl.style.display = "flex";
-    this.actionsEl.style.flexWrap = "wrap";
-    this.actionsEl.style.justifyContent = "flex-end";
-    this.actionsEl.style.gap = "6px";
-    this.actionsEl.style.width = "292px";
-    inGrid(this.actionsEl, "actions", "end", "start");
+    this.actionsEl = div("panel builder-actions");
+    this.rightRailEl.appendChild(this.actionsEl);
     this.renderActions();
 
-    // staging (bottom-right)
-    this.stagingEl = div("panel");
-    this.stagingEl.style.width = "230px";
-    this.stagingEl.style.maxHeight = "42vh";
-    this.stagingEl.style.overflowY = "auto";
-    this.stagingEl.style.fontSize = "13px";
-    inGrid(this.stagingEl, "staging", "end", "end");
+    this.stagingEl = div("panel builder-staging");
+    this.rightRailEl.appendChild(this.stagingEl);
 
-    // hint (top-center)
-    this.hintEl = div("panel");
-    this.hintEl.classList.add("hint");
+    this.hintEl = div("panel hint builder-hint");
     this.hintEl.textContent = Builder.HINT;
-    inGrid(this.hintEl, "hint", "center", "start");
+    this.gridEl.appendChild(this.hintEl);
   }
 
   private paletteScaffold() {
     this.paletteEl = div("panel");
-    this.paletteEl.style.width = "240px";
-    this.paletteEl.style.maxHeight = "100%";
-    this.paletteEl.style.overflowY = "auto";
     const title = document.createElement("h3");
     title.textContent = "🚀 Parts Bin";
     this.paletteEl.appendChild(title);
