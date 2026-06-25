@@ -4,8 +4,8 @@
   "description": "Build questionable rockets and launch them across a tiny solar system.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f3ead6",
-  "theme_color": "#c84b31",
+  "background_color": "#344e82",
+  "theme_color": "#344e82",
   "icons": [
     {
       "src": "/icons/icon-192.png",
