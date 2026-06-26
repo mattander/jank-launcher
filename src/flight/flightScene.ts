@@ -52,6 +52,8 @@ export class FlightScene {
   private fireCooldown = new Map<string, number>();
   private clock = 0;
   private shake = 0;
+  private shakeVel: Vec2 = { x: 0, y: 0 };
+  private impactPause = 0;
   private score = 0;
   private combo = 1;
   private comboTimer = 0;
@@ -97,9 +99,14 @@ export class FlightScene {
     this.fx = new Particles();
     this.fx.onBoom = (size) => {
       this.audio.explosion(size);
-      this.shake = Math.min(16, this.shake + size * 3);
+      this.kickCamera(size * 3.2);
     };
-    this.fx.onCrash = (speed, destroyedParts) => this.reportCrash(speed, destroyedParts);
+    this.fx.onCrash = (speed, destroyedParts) => {
+      this.reportCrash(speed, destroyedParts);
+      const severity = Math.min(1, speed / 70 + destroyedParts * 0.06);
+      this.impactPause = Math.max(this.impactPause, 0.035 + severity * 0.08);
+      this.kickCamera(10 + severity * 22);
+    };
     this.milestones.clear();
     this.world = new World();
     this.clock = 0;
@@ -113,6 +120,9 @@ export class FlightScene {
     this.wasLanded = false;
     this.lastCrashToast = -999;
     this.hudTimer = 1;
+    this.impactPause = 0;
+    this.shake = 0;
+    this.shakeVel = { x: 0, y: 0 };
 
     const v = assembleVessel(design);
     this.player = v;
@@ -295,6 +305,14 @@ export class FlightScene {
   // ---------------- update ----------------
   update(frameDt: number) {
     if (!this.layer.visible || !this.player) return;
+    if (this.impactPause > 0) {
+      const used = Math.min(frameDt, this.impactPause);
+      this.impactPause -= used;
+      this.fx.update(used * 0.35);
+      this.decayShake(frameDt);
+      this.render();
+      return;
+    }
     // throttle from held keys
     if (this.keys.has("w")) this.throttle = Math.min(1, this.throttle + frameDt * 0.8);
     if (this.keys.has("s")) this.throttle = Math.max(0, this.throttle - frameDt * 0.8);
@@ -353,7 +371,7 @@ export class FlightScene {
       this.toastOnce("rip", "💀 Your craft is gone. Esc to head back to the hangar.");
     }
 
-    this.shake *= Math.exp(-frameDt * 7); // decay screen shake
+    this.decayShake(frameDt);
     if (this.comboTimer > 0) {
       this.comboTimer -= frameDt;
       if (this.comboTimer <= 0) this.combo = 1;
@@ -367,6 +385,18 @@ export class FlightScene {
       this.hudTimer = 0;
       this.updateHud();
     }
+  }
+
+  private kickCamera(amount: number) {
+    const angle = this.clock * 17.31 + amount * 0.13;
+    const impulse = V.fromAngle(angle, amount);
+    this.shakeVel = V.add(this.shakeVel, impulse);
+    this.shake = Math.min(42, this.shake + amount);
+  }
+
+  private decayShake(dt: number) {
+    this.shake *= Math.exp(-dt * 4.8);
+    this.shakeVel = V.scale(this.shakeVel, Math.exp(-dt * 7.5));
   }
 
   private followCamera() {
@@ -497,9 +527,13 @@ export class FlightScene {
       this.layer.position.set(0, 0);
       return;
     }
-    // screen shake offset (world layers only; HUD is DOM and stays put)
+    // Screen shake offset (world layers only; HUD is DOM and stays put). Use a
+    // coherent kick plus high-frequency wobble rather than pure random jitter.
     if (this.shake > 0.1) {
-      this.layer.position.set((Math.random() - 0.5) * this.shake * 2, (Math.random() - 0.5) * this.shake * 2);
+      const t = this.clock;
+      const wobbleX = Math.sin(t * 87) * this.shake * 0.45 + Math.sin(t * 43) * this.shake * 0.35;
+      const wobbleY = Math.cos(t * 79) * this.shake * 0.45 + Math.sin(t * 51) * this.shake * 0.35;
+      this.layer.position.set(this.shakeVel.x * 0.25 + wobbleX, this.shakeVel.y * 0.25 + wobbleY);
     } else {
       this.layer.position.set(0, 0);
     }

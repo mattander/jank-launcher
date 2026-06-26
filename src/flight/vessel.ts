@@ -26,7 +26,7 @@ export interface VesselInput {
 
 export interface Fx {
   explosion(pos: Vec2, size: number): void;
-  crash(pos: Vec2, speed: number, destroyedParts: number): void;
+  crash(pos: Vec2, speed: number, destroyedParts: number, normal?: Vec2, impactVel?: Vec2): void;
   puff(pos: Vec2, vel: Vec2, color: number): void;
   smoke(pos: Vec2, vel: Vec2): void;
   ember(pos: Vec2, vel: Vec2, color: number, size?: number): void;
@@ -531,7 +531,7 @@ export class Vessel {
     this.vel = V.add(body.vel, v);
     const impactAccel = radialSpeed * 220; // large effective accel for the frame
     const impactPoint = this.partWorld(deepest.p);
-    fx.explosion(impactPoint, Math.min(3, 0.6 + radialSpeed * 0.04));
+    fx.explosion(impactPoint, Math.min(5.5, 1.2 + radialSpeed * 0.07));
     let destroyedParts = 0;
     for (const p of this.parts) {
       if (!p.alive) continue;
@@ -544,12 +544,12 @@ export class Vessel {
       if (p.hp <= 0) {
         p.alive = false;
         destroyedParts += 1;
-        fx.explosion(w, Math.min(1.8, 0.45 + radialSpeed * 0.02));
+        fx.explosion(w, Math.min(3.2, 0.8 + radialSpeed * 0.035));
       } else if (radialSpeed > 16) {
         fx.puff(w, V.scale(normal, 10 + radialSpeed), 0x8a8175);
       }
     }
-    fx.crash(impactPoint, radialSpeed, destroyedParts);
+    fx.crash(impactPoint, radialSpeed, destroyedParts, normal, vRel);
     return this.checkStress(impactAccel, fx);
   }
 

@@ -16,6 +16,12 @@ interface Particle {
 }
 
 const MAX_PARTICLES = 2400;
+const FIRE_COLORS = [0xfff2c8, 0xffd24a, 0xff8a3d, 0xc84b31];
+const SMOKE_COLORS = [0x4f4840, 0x6b6256, 0x8a8175];
+
+function pickColor(colors: number[]): number {
+  return colors[Math.floor(Math.random() * colors.length)] ?? colors[0] ?? 0xffffff;
+}
 
 export class Particles implements Fx {
   parts: Particle[] = [];
@@ -61,32 +67,58 @@ export class Particles implements Fx {
     this.push({ pos, vel: { x: 0, y: 0 }, life: 0.35, size: size * 8, color: 0xfff2c8, ring: true });
   }
 
-  crash(pos: Vec2, speed: number, destroyedParts: number) {
+  crash(pos: Vec2, speed: number, destroyedParts: number, normal: Vec2 = { x: 0, y: 1 }, impactVel: Vec2 = { x: 0, y: -1 }) {
     this.onCrash?.(speed, destroyedParts);
-    const severity = Math.min(4, Math.max(1, speed / 18));
-    const sparks = Math.round(18 + severity * 16 + destroyedParts * 6);
+    const severity = Math.min(8, Math.max(1.4, speed / 11 + destroyedParts * 0.35));
+    const tangent = { x: -normal.y, y: normal.x };
+    const incoming = V.len(impactVel) > 0.1 ? V.norm(impactVel) : V.scale(normal, -1);
+    const blastCore = Math.min(7.5, 2 + severity * 0.55);
+    this.explosion(pos, blastCore);
+    this.push({ pos, vel: { x: 0, y: 0 }, life: 0.5, size: 28 + severity * 14, color: 0xfff2c8, ring: true });
+    this.push({ pos, vel: { x: 0, y: 0 }, life: 0.75, size: 42 + severity * 22, color: 0xff8a3d, ring: true });
+
+    const sparks = Math.round(48 + severity * 22 + destroyedParts * 12);
     for (let i = 0; i < sparks; i++) {
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.4;
-      const sp = (60 + Math.random() * 180) * severity;
+      const alongSurface = V.scale(tangent, (Math.random() - 0.5) * (180 + severity * 80));
+      const upward = V.scale(normal, 60 + Math.random() * (130 + severity * 55));
+      const backwash = V.scale(incoming, -(20 + Math.random() * 80));
+      const vel = V.add(V.add(alongSurface, upward), backwash);
       this.push({
         pos,
-        vel: V.fromAngle(a, sp),
-        life: 0.25 + Math.random() * 0.35,
-        size: 2 + Math.random() * 4,
-        color: Math.random() < 0.65 ? 0xffd24a : 0xfff2c8,
+        vel,
+        life: 0.35 + Math.random() * 0.55,
+        size: 3 + Math.random() * (4 + severity * 0.5),
+        color: pickColor(FIRE_COLORS),
         glow: true,
-        grow: -5,
+        grow: -7,
       });
     }
-    for (let i = 0; i < 10 + severity * 6; i++) {
-      const a = Math.random() * Math.PI * 2;
+
+    const smoke = Math.round(28 + severity * 12 + destroyedParts * 5);
+    for (let i = 0; i < smoke; i++) {
+      const alongSurface = V.scale(tangent, (Math.random() - 0.5) * (40 + severity * 24));
+      const billow = V.scale(normal, 15 + Math.random() * (55 + severity * 18));
+      const drift = V.scale(incoming, -(8 + Math.random() * 30));
       this.push({
         pos,
-        vel: V.fromAngle(a, 10 + Math.random() * 55),
-        life: 1 + Math.random() * 1.2,
-        size: 8 + Math.random() * 14,
-        color: Math.random() < 0.5 ? 0x6b6256 : 0x8a8175,
-        grow: 18,
+        vel: V.add(V.add(alongSurface, billow), drift),
+        life: 1.1 + Math.random() * 1.8,
+        size: 12 + Math.random() * (18 + severity * 3),
+        color: pickColor(SMOKE_COLORS),
+        grow: 20 + severity * 3,
+      });
+    }
+
+    const chunks = Math.round(8 + destroyedParts * 4 + severity * 2);
+    for (let i = 0; i < chunks; i++) {
+      const spray = V.rot(normal, (Math.random() - 0.5) * Math.PI * 1.7);
+      this.push({
+        pos,
+        vel: V.add(V.scale(spray, 70 + Math.random() * (120 + severity * 45)), V.scale(tangent, (Math.random() - 0.5) * 120)),
+        life: 0.8 + Math.random() * 1.1,
+        size: 5 + Math.random() * 9,
+        color: Math.random() < 0.5 ? 0x554b3a : 0xb9b2a0,
+        grow: -2,
       });
     }
   }
