@@ -651,7 +651,8 @@ export class FlightScene {
     if (body.atmoHeight > 0 && t < 0.92) {
       const horizon = this.cam.worldToScreen(body.pos);
       const rr = (body.radius + Math.max(1800, body.atmoHeight * 0.08)) * this.cam.zoom;
-      if (rr > 80) {
+      const maxRimRadius = Math.max(this.cam.screenW, this.cam.screenH) * 2.5;
+      if (rr > 80 && rr < maxRimRadius) {
         g.poly(circlePoints(horizon.x, horizon.y, rr, 96));
         g.stroke({ color: body.atmoColor, width: Math.max(2, Math.min(14, rr * 0.015)), alpha: 0.16 + (1 - t) * 0.18 });
       }
@@ -697,7 +698,7 @@ export class FlightScene {
         g.poly(circlePoints(s.x, s.y, (b.radius + b.atmoHeight) * this.cam.zoom));
         g.fill({ color: b.atmoColor, alpha: 0.25 });
       }
-      if (b.id === "sun") {
+      if (b.id === "sun" && r < Math.max(W, H) * 2.5) {
         g.poly(circlePoints(s.x, s.y, r * 1.28, 96));
         g.fill({ color: 0xffd24a, alpha: 0.12 });
       }
@@ -777,6 +778,8 @@ export class FlightScene {
 
   private drawPlanetDetails(g: Graphics, body: Body, center: Vec2, radius: number) {
     if (radius < 12) return;
+    const maxDecorRadius = Math.max(this.cam.screenW, this.cam.screenH) * 1.6;
+    if (radius > maxDecorRadius) return;
     if (body.id === "sun") {
       for (let i = 0; i < 10; i++) {
         const a = this.clock * 0.08 + i * 0.83;
@@ -812,7 +815,7 @@ export class FlightScene {
     if (body.id === "sun") return;
     const scale = this.cam.zoom;
     if (scale < 0.025) return;
-    const count = Math.min(80, Math.max(18, Math.round(body.radius * scale / 180)));
+    const count = Math.min(scale > 4 ? 28 : 80, Math.max(18, Math.round(body.radius * scale / 180)));
     const scenery = sceneryPalette(body.id);
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + body.phase * 0.31;
