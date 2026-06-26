@@ -35,7 +35,8 @@ export interface Fx {
   impact?(pos: Vec2, normal: Vec2, strength: number): void;
 }
 
-const BASE_STRENGTH = 1400; // kN per meter of joint, tuned so flight is stable
+const BASE_STRENGTH = 4200; // kN per meter of joint, tuned so normal flight stays rigid
+const STRUCTURAL_STRESS_GRACE = 1.35;
 const PART_HP = 60;
 
 let vesselSeq = 0;
@@ -465,7 +466,7 @@ export class Vessel {
       // the smaller side is what "hangs" off this joint
       const massBeyond = Math.min(this.massOf(sideA), this.massOf(sideB));
       const stress = massBeyond * accelMag;
-      if (stress > str) cut.add(key);
+      if (stress > str * STRUCTURAL_STRESS_GRACE) cut.add(key);
     }
     if (cut.size === 0) return [];
     for (const k of cut) {
@@ -525,11 +526,11 @@ export class Vessel {
       return [];
     }
 
-    // hard hit: bounce a bit, damage, and break joints (jank!)
+    // hard hit: absorb and slide instead of trampolining back off the surface.
     this.landed = false;
     const vn = vRel.x * normal.x + vRel.y * normal.y;
-    let v = V.sub(vRel, V.scale(normal, vn * 1.3));
-    v = V.scale(v, 0.4);
+    let v = V.sub(vRel, V.scale(normal, vn));
+    v = V.scale(v, 0.28);
     this.vel = V.add(body.vel, v);
     const impactAccel = radialSpeed * 220; // large effective accel for the frame
     const impactPoint = this.partWorld(deepest.p);

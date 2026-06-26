@@ -3,6 +3,7 @@ import { World } from "./world";
 import { assembleVessel, Fx } from "./vessel";
 import { Design } from "../build/design";
 import { getPart, partWetMass } from "../parts/catalog";
+import { V } from "../types";
 
 const noFx: Fx = { explosion() {}, crash() {}, puff() {}, smoke() {}, ember() {}, fireworks() {} };
 
@@ -57,5 +58,36 @@ describe("assembleVessel", () => {
     expect(debris.length).toBe(1);
     expect(debris[0].aliveParts().length).toBe(2); // tank-large + engine
     expect(v.aliveParts().length).toBe(before - 2);
+  });
+
+  it("stays rigid under sustained high-throttle physics stepping", () => {
+    const world = new World();
+    const v = assembleVessel(twoStage);
+    v.pos = { x: 5e9, y: 0 };
+    v.vel = { x: 0, y: 0 };
+
+    let debrisCount = 0;
+    for (let i = 0; i < 240; i++) {
+      const debris = v.update(1 / 120, world, { rotate: 0, throttleTarget: 1, rcs: false, stage: false }, noFx);
+      debrisCount += debris.length;
+    }
+
+    expect(debrisCount).toBe(0);
+    expect(v.aliveParts().length).toBe(twoStage.parts.length);
+  });
+
+  it("absorbs hard ground impacts instead of bouncing outward", () => {
+    const world = new World();
+    const terra = world.get("terra");
+    const v = assembleVessel({ name: "Drop", parts: [{ uid: "pod", defId: "pod-mk1", x: 0, y: 0, flip: false }] });
+    const normal = { x: 0, y: 1 };
+    v.pos = V.add(terra.pos, V.scale(normal, terra.radius + 0.5));
+    v.vel = V.add(terra.vel, V.scale(normal, -50));
+
+    v.update(1 / 120, world, null, noFx);
+
+    const relVel = V.sub(v.vel, terra.vel);
+    const outward = relVel.x * normal.x + relVel.y * normal.y;
+    expect(outward).toBeLessThan(1);
   });
 });
