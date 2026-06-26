@@ -11,6 +11,7 @@ import { Particles } from "./fx";
 import { sketchCircle } from "../sketch";
 import { GameAudio } from "../audio";
 import { loadLog, saveLog, GameLog } from "../storage";
+import { DEFAULT_SETTINGS, GameSettings } from "../settings";
 
 const WEAPON_KINDS: WeaponSpec["kind"][] = ["cannon", "laser", "missile"];
 
@@ -41,6 +42,7 @@ export class FlightScene {
   combat = new Combat();
   fx = new Particles();
   audio = new GameAudio();
+  private settings: GameSettings = { ...DEFAULT_SETTINGS };
   vessels: Vessel[] = [];
   player: Vessel | null = null;
   onExit: () => void;
@@ -196,6 +198,16 @@ export class FlightScene {
     this.firing = false;
     this.audio.setThrust(0);
     this.audio.setLaser(false);
+  }
+
+  setSettings(settings: GameSettings) {
+    this.settings = settings;
+    if (!settings.motion) {
+      this.shake = 0;
+      this.shakeVel = { x: 0, y: 0 };
+      this.transitionTimer = 0;
+      if (this.transitionEl) this.transitionEl.style.opacity = "0";
+    }
   }
 
   resize() {
@@ -436,6 +448,7 @@ export class FlightScene {
   }
 
   private kickCamera(amount: number) {
+    if (!this.settings.motion) return;
     const angle = this.clock * 17.31 + amount * 0.13;
     const impulse = V.fromAngle(angle, amount);
     this.shakeVel = V.add(this.shakeVel, impulse);
@@ -631,15 +644,27 @@ export class FlightScene {
     const alt = this.player ? this.world.altitudeAbove(this.player.pos, body) : 0;
     const atmo = body.atmoHeight || 1;
     const t = Math.max(0, Math.min(1, alt / atmo));
-    const col = lerpColor(0x9ec7e0, 0x0d1020, t);
+    const groundSky = isDarkTheme() ? 0x5f88ac : 0xa4cde3;
+    const highSky = isDarkTheme() ? 0x070a14 : 0x0d1020;
+    const col = lerpColor(groundSky, highSky, t);
     g.fill({ color: col });
+    if (body.atmoHeight > 0 && t < 0.92) {
+      const horizon = this.cam.worldToScreen(body.pos);
+      const rr = (body.radius + Math.max(1800, body.atmoHeight * 0.08)) * this.cam.zoom;
+      if (rr > 80) {
+        g.poly(circlePoints(horizon.x, horizon.y, rr, 96));
+        g.stroke({ color: body.atmoColor, width: Math.max(2, Math.min(14, rr * 0.015)), alpha: 0.16 + (1 - t) * 0.18 });
+      }
+    }
     // stars when high
     if (t > 0.4) {
       if (this.stars.length === 0) this.rebuildStars();
-      for (const star of this.stars) {
-        g.circle(star.x, star.y, 1.2);
+      for (let i = 0; i < this.stars.length; i++) {
+        const star = this.stars[i];
+        const pulse = 0.72 + Math.sin(this.clock * 0.7 + i * 1.91) * 0.18;
+        g.circle(star.x, star.y, i % 11 === 0 ? 1.8 : 1.1);
+        g.fill({ color: i % 7 === 0 ? 0x9ec7e0 : 0xfff2c8, alpha: (t - 0.4) * 1.45 * pulse });
       }
-      g.fill({ color: 0xfff2c8, alpha: (t - 0.4) * 1.6 });
     }
   }
 
@@ -659,6 +684,8 @@ export class FlightScene {
   private drawBodies() {
     const g = this.gBodies;
     g.clear();
+    const W = this.cam.screenW;
+    const H = this.cam.screenH;
     for (const b of this.world.bodies) {
       const s = this.cam.worldToScreen(b.pos);
       const r = b.radius * this.cam.zoom;
@@ -670,13 +697,19 @@ export class FlightScene {
         g.poly(circlePoints(s.x, s.y, (b.radius + b.atmoHeight) * this.cam.zoom));
         g.fill({ color: b.atmoColor, alpha: 0.25 });
       }
+      if (b.id === "sun") {
+        g.poly(circlePoints(s.x, s.y, r * 1.28, 96));
+        g.fill({ color: 0xffd24a, alpha: 0.12 });
+      }
       g.poly(circlePoints(s.x, s.y, r));
-      g.fill({ color: b.color });
+      g.fill({ color: planetBaseColor(b) });
+      this.drawPlanetDetails(g, b, s, r);
       g.stroke({ color: 0x2a2118, width: 2, alpha: 0.5 });
     }
+    if (this.settings.scenery && this.player) {
+      this.drawSurfaceScenery(g, this.world.dominantBody(this.player.pos), W, H);
+    }
     // floating targets
-    const W = this.cam.screenW;
-    const H = this.cam.screenH;
     for (const t of this.combat.targets) {
       const s = this.cam.worldToScreen(t.pos);
       const r = t.radius * this.cam.zoom;
@@ -740,6 +773,125 @@ export class FlightScene {
         }
       }
     }
+  }
+
+  private drawPlanetDetails(g: Graphics, body: Body, center: Vec2, radius: number) {
+    if (radius < 12) return;
+    if (body.id === "sun") {
+      for (let i = 0; i < 10; i++) {
+        const a = this.clock * 0.08 + i * 0.83;
+        const p = { x: center.x + Math.cos(a) * radius * 0.42, y: center.y + Math.sin(a) * radius * 0.34 };
+        g.circle(p.x, p.y, Math.max(2, radius * (0.025 + (i % 3) * 0.009)));
+        g.fill({ color: 0xfff2c8, alpha: 0.18 });
+      }
+      return;
+    }
+
+    const detail = planetDetail(body.id);
+    for (let i = 0; i < detail.blobs; i++) {
+      const a = i * 2.399 + body.phase * 0.7;
+      const d = radius * (0.18 + ((i * 37) % 53) / 100);
+      const x = center.x + Math.cos(a) * d;
+      const y = center.y + Math.sin(a * 1.13) * d * 0.72;
+      const w = Math.max(3, radius * (0.05 + (i % 4) * 0.018));
+      const h = Math.max(2, radius * (0.022 + (i % 3) * 0.012));
+      g.ellipse(x, y, w, h);
+      g.fill({ color: i % 3 === 0 ? detail.accent : detail.mid, alpha: detail.alpha });
+    }
+
+    if (body.id === "terra" && radius > 55) {
+      for (let i = 0; i < 7; i++) {
+        const a = i * 1.21 + 0.35;
+        g.ellipse(center.x + Math.cos(a) * radius * 0.48, center.y + Math.sin(a) * radius * 0.38, radius * 0.16, radius * 0.035);
+        g.fill({ color: 0xfff2c8, alpha: 0.16 });
+      }
+    }
+  }
+
+  private drawSurfaceScenery(g: Graphics, body: Body, screenW: number, screenH: number) {
+    if (body.id === "sun") return;
+    const scale = this.cam.zoom;
+    if (scale < 0.025) return;
+    const count = Math.min(80, Math.max(18, Math.round(body.radius * scale / 180)));
+    const scenery = sceneryPalette(body.id);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + body.phase * 0.31;
+      const up = V.fromAngle(angle);
+      const base = this.cam.worldToScreen(V.add(body.pos, V.scale(up, body.radius + 1.5)));
+      if (base.x < -40 || base.x > screenW + 40 || base.y < -40 || base.y > screenH + 40) continue;
+      const ups = { x: up.x, y: -up.y };
+      const side = { x: -ups.y, y: ups.x };
+      const h = Math.max(4, Math.min(26, (6 + (i % 5) * 2.8) * scale));
+      const w = h * (0.45 + (i % 3) * 0.16);
+      if (body.id === "terra" && i % 3 !== 0) {
+        this.drawTree(g, base, ups, side, h, scenery);
+      } else if (body.id === "frost") {
+        this.drawShard(g, base, ups, side, h, w, scenery);
+      } else if (body.id === "rusty") {
+        this.drawSpire(g, base, ups, side, h, w, scenery);
+      } else {
+        this.drawRock(g, base, ups, side, h, w, scenery);
+      }
+    }
+  }
+
+  private drawTree(g: Graphics, base: Vec2, up: Vec2, side: Vec2, height: number, palette: SceneryPalette) {
+    g.moveTo(base.x, base.y);
+    g.lineTo(base.x + up.x * height * 0.6, base.y + up.y * height * 0.6);
+    g.stroke({ color: palette.dark, width: Math.max(1, height * 0.12), alpha: 0.85, cap: "round" });
+    g.poly([
+      base.x + up.x * height,
+      base.y + up.y * height,
+      base.x + side.x * height * 0.48 + up.x * height * 0.35,
+      base.y + side.y * height * 0.48 + up.y * height * 0.35,
+      base.x - side.x * height * 0.48 + up.x * height * 0.35,
+      base.y - side.y * height * 0.48 + up.y * height * 0.35,
+    ]);
+    g.fill({ color: palette.main, alpha: 0.92 });
+    g.stroke({ color: 0x2a2118, width: 1, alpha: 0.45 });
+  }
+
+  private drawShard(g: Graphics, base: Vec2, up: Vec2, side: Vec2, height: number, width: number, palette: SceneryPalette) {
+    g.poly([
+      base.x + up.x * height,
+      base.y + up.y * height,
+      base.x + side.x * width,
+      base.y + side.y * width,
+      base.x - side.x * width * 0.7,
+      base.y - side.y * width * 0.7,
+    ]);
+    g.fill({ color: palette.main, alpha: 0.72 });
+    g.stroke({ color: palette.light, width: 1.5, alpha: 0.72 });
+  }
+
+  private drawSpire(g: Graphics, base: Vec2, up: Vec2, side: Vec2, height: number, width: number, palette: SceneryPalette) {
+    g.poly([
+      base.x + up.x * height,
+      base.y + up.y * height,
+      base.x + side.x * width,
+      base.y + side.y * width,
+      base.x - side.x * width,
+      base.y - side.y * width,
+    ]);
+    g.fill({ color: palette.main, alpha: 0.82 });
+    g.stroke({ color: palette.dark, width: 1.5, alpha: 0.68 });
+  }
+
+  private drawRock(g: Graphics, base: Vec2, up: Vec2, side: Vec2, height: number, width: number, palette: SceneryPalette) {
+    g.poly([
+      base.x + up.x * height * 0.55 - side.x * width,
+      base.y + up.y * height * 0.55 - side.y * width,
+      base.x + up.x * height * 0.8,
+      base.y + up.y * height * 0.8,
+      base.x + up.x * height * 0.35 + side.x * width,
+      base.y + up.y * height * 0.35 + side.y * width,
+      base.x + side.x * width * 0.7,
+      base.y + side.y * width * 0.7,
+      base.x - side.x * width * 0.8,
+      base.y - side.y * width * 0.8,
+    ]);
+    g.fill({ color: palette.main, alpha: 0.72 });
+    g.stroke({ color: palette.dark, width: 1.2, alpha: 0.58 });
   }
 
   private drawLandmarks(g: Graphics, bodyId: string, screenW: number, screenH: number) {
@@ -1448,6 +1600,47 @@ function smoothVec(from: Vec2, to: Vec2, factor: number): Vec2 {
 function parseSasMode(value: string | undefined): "off" | "prograde" | "retrograde" | "hold" | null {
   if (value === "off" || value === "prograde" || value === "retrograde" || value === "hold") return value;
   return null;
+}
+
+interface PlanetDetail {
+  mid: number;
+  accent: number;
+  blobs: number;
+  alpha: number;
+}
+
+interface SceneryPalette {
+  main: number;
+  light: number;
+  dark: number;
+}
+
+function isDarkTheme(): boolean {
+  return document.documentElement.dataset.theme === "dark";
+}
+
+function planetBaseColor(body: Body): number {
+  if (body.id === "terra") return 0x3f88a5;
+  if (body.id === "luna") return 0xb8b1a2;
+  if (body.id === "rusty") return 0xb85d35;
+  if (body.id === "frost") return 0x9fcbe4;
+  if (body.id === "sun") return 0xe8c452;
+  return body.color;
+}
+
+function planetDetail(bodyId: string): PlanetDetail {
+  if (bodyId === "terra") return { mid: 0x5b8c4a, accent: 0xd8b24a, blobs: 18, alpha: 0.86 };
+  if (bodyId === "luna") return { mid: 0x8e877b, accent: 0xd8cab0, blobs: 20, alpha: 0.38 };
+  if (bodyId === "rusty") return { mid: 0x8a4a35, accent: 0xd98a3d, blobs: 17, alpha: 0.48 };
+  if (bodyId === "frost") return { mid: 0xcfe6f2, accent: 0x6da8c8, blobs: 16, alpha: 0.52 };
+  return { mid: 0x6b6256, accent: 0xfff2c8, blobs: 10, alpha: 0.36 };
+}
+
+function sceneryPalette(bodyId: string): SceneryPalette {
+  if (bodyId === "terra") return { main: 0x3f7f57, light: 0x9ecf7d, dark: 0x554b3a };
+  if (bodyId === "rusty") return { main: 0x8a4a35, light: 0xff8a3d, dark: 0x554b3a };
+  if (bodyId === "frost") return { main: 0xcfe6f2, light: 0xffffff, dark: 0x6da8c8 };
+  return { main: 0x8a8175, light: 0xd8cab0, dark: 0x554b3a };
 }
 
 function fmtTime(s: number): string {
