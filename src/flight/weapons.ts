@@ -18,7 +18,7 @@ export interface Projectile {
   targetBody?: string;
 }
 
-const BLAST = { cannon: 130, missile: 300 } as const;
+const BLAST: Record<Projectile["kind"], number> = { cannon: 130, missile: 300 };
 
 export interface Target {
   pos: Vec2;
@@ -35,6 +35,7 @@ export interface Beam {
   a: Vec2;
   b: Vec2;
   life: number;
+  maxLife: number;
   hit: boolean;
 }
 
@@ -60,7 +61,12 @@ export interface Bolt {
   alive: boolean;
 }
 
-const SCORE = { asteroid: 100, blimp: 60, ufo: 300 } as const;
+type Hit =
+  | { kind: "target"; target?: Target; point: Vec2 }
+  | { kind: "ufo"; ufo: Ufo; point: Vec2 }
+  | { kind: "vessel"; vessel: Vessel; part: PartInstance; point: Vec2 };
+
+const SCORE: Record<Target["kind"] | "ufo", number> = { asteroid: 100, blimp: 60, ufo: 300 };
 
 export class Combat {
   projectiles: Projectile[] = [];
@@ -155,10 +161,11 @@ export class Combat {
     const range = Math.min(spec.range, Math.max(60, V.len(V.sub(aim, origin))));
     const hit = this.rayHit(origin, dir, range, world, vessels, ownerId);
     const end = hit ? hit.point : V.add(origin, V.scale(dir, range));
-    this.beams.push({ a: { ...origin }, b: end, life: 0.06, hit: !!hit });
+    this.beams.push({ a: { ...origin }, b: end, life: 0.11, maxLife: 0.11, hit: !!hit });
     if (hit) {
       this.applyDamage(hit, spec.damage * 0.05, fx);
-      if (Math.random() < 0.5) fx.explosion(hit.point, 0.4);
+      fx.impact?.(hit.point, V.scale(dir, -1), 0.9);
+      if (Math.random() < 0.18) fx.explosion(hit.point, 0.45);
     }
   }
 
@@ -209,6 +216,7 @@ export class Combat {
             damage: 7,
             alive: true,
           });
+          fx.flash?.(u.pos, dir, 0x9bff6b);
           u.fireCd = 2.4 + Math.random() * 2.6;
         } else {
           u.fireCd = 1;
@@ -224,12 +232,18 @@ export class Combat {
       if (b.life <= 0) { b.alive = false; continue; }
       const next = V.add(b.pos, V.scale(b.vel, dt));
       const body = world.dominantBody(next);
-      if (V.len(V.sub(next, body.pos)) < body.radius) { fx.explosion(next, 0.5); b.alive = false; continue; }
+      if (V.len(V.sub(next, body.pos)) < body.radius) {
+        fx.impact?.(next, V.norm(V.sub(next, body.pos)), 0.8);
+        fx.explosion(next, 0.5);
+        b.alive = false;
+        continue;
+      }
       let hit = false;
       for (const v of vessels) {
         for (const p of v.aliveParts()) {
           if (V.len(V.sub(next, v.partWorld(p))) < Math.max(p.def.width, p.def.height) * 0.6) {
             v.damagePart(p, b.damage, fx);
+            fx.impact?.(next, V.norm(V.sub(next, v.partWorld(p))), 1);
             fx.explosion(next, 0.7);
             b.alive = false;
             hit = true;
@@ -339,6 +353,7 @@ export class Combat {
       return; // celebration only — no real blast
     }
     const blast = BLAST[pr.kind];
+    fx.impact?.(at, V.norm(V.scale(pr.vel, -1)), pr.kind === "missile" ? 2.2 : 1.4);
     fx.explosion(at, pr.kind === "missile" ? 2.2 : 1.4);
     for (const t of this.targets) {
       if (t.alive && V.len(V.sub(at, t.pos)) < blast + t.radius) this.hurtTarget(t, pr.damage, fx);
@@ -392,7 +407,7 @@ export class Combat {
   }
 
   private applyDamage(
-    hit: { kind: "target" | "vessel" | "ufo"; target?: Target; ufo?: Ufo; vessel?: Vessel; part?: PartInstance; point: Vec2 },
+    hit: Hit,
     dmg: number,
     fx: Fx,
   ) {
@@ -402,29 +417,29 @@ export class Combat {
   }
 
   // Simple ray march to find the first thing hit (for lasers).
-  private rayHit(origin: Vec2, dir: Vec2, range: number, world: World, vessels: Vessel[], ownerId: number) {
+  private rayHit(origin: Vec2, dir: Vec2, range: number, world: World, vessels: Vessel[], ownerId: number): Hit | null {
     const steps = 60;
     const dl = range / steps;
     for (let i = 1; i <= steps; i++) {
       const point = V.add(origin, V.scale(dir, dl * i));
       const body = world.dominantBody(point);
       if (V.len(V.sub(point, body.pos)) < body.radius) {
-        return { kind: "target" as const, point }; // terrain: treated as a hit (no damage object)
+        return { kind: "target", point }; // terrain: treated as a hit (no damage object)
       }
       for (const t of this.targets) {
         if (t.alive && V.len(V.sub(point, t.pos)) < t.radius)
-          return { kind: "target" as const, target: t, point };
+          return { kind: "target", target: t, point };
       }
       for (const u of this.ufos) {
         if (u.alive && V.len(V.sub(point, u.pos)) < u.radius)
-          return { kind: "ufo" as const, ufo: u, point };
+          return { kind: "ufo", ufo: u, point };
       }
       for (const v of vessels) {
         if (v.id === ownerId) continue;
         for (const p of v.aliveParts()) {
           const w = v.partWorld(p);
           const r = Math.max(p.def.width, p.def.height) * 0.6;
-          if (V.len(V.sub(point, w)) < r) return { kind: "vessel" as const, vessel: v, part: p, point };
+          if (V.len(V.sub(point, w)) < r) return { kind: "vessel", vessel: v, part: p, point };
         }
       }
     }

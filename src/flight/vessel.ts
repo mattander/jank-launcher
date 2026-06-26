@@ -31,6 +31,8 @@ export interface Fx {
   smoke(pos: Vec2, vel: Vec2): void;
   ember(pos: Vec2, vel: Vec2, color: number, size?: number): void;
   fireworks(pos: Vec2, size: number): void;
+  flash?(pos: Vec2, dir: Vec2, color: number): void;
+  impact?(pos: Vec2, normal: Vec2, strength: number): void;
 }
 
 const BASE_STRENGTH = 1400; // kN per meter of joint, tuned so flight is stable
@@ -435,15 +437,15 @@ export class Vessel {
       return this.splitByCutting(cut, fx);
     }
     // otherwise: deploy parachutes and legs
-    let any = false;
+    let deployedSomething = false;
     for (const p of this.parts) {
       if (!p.alive) continue;
       if ((p.def.parachute || p.def.landingLeg) && !p.deployed) {
         p.deployed = true;
-        any = true;
+        deployedSomething = true;
       }
     }
-    if (any) fx.puff(this.pos, { x: 0, y: 0 }, 0xc84b31);
+    if (deployedSomething) fx.puff(this.pos, { x: 0, y: 0 }, 0xc84b31);
     return [];
   }
 

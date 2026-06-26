@@ -134,7 +134,7 @@ export class Particles implements Fx {
         pos, vel: V.fromAngle(a, sp),
         life: 0.7 + Math.random() * 0.7,
         size: 3 + Math.random() * 4,
-        color: palette[(Math.random() * palette.length) | 0],
+        color: pickColor(palette),
         glow: true, grow: -2,
       });
     }
@@ -142,14 +142,44 @@ export class Particles implements Fx {
 
   // bright muzzle flash: a short cone of sparks along `dir`
   flash(pos: Vec2, dir: Vec2, color: number) {
-    for (let i = 0; i < 7; i++) {
+    this.push({
+      pos,
+      vel: V.scale(dir, 24),
+      life: 0.1,
+      size: 15,
+      color: 0xfff2c8,
+      ring: true,
+      glow: true,
+      grow: 28,
+    });
+    for (let i = 0; i < 12; i++) {
       const d = V.rot(dir, (Math.random() - 0.5) * 0.7);
       this.push({
         pos, vel: V.scale(d, 120 + Math.random() * 160),
-        life: 0.12 + Math.random() * 0.12,
-        size: 4 + Math.random() * 5,
+        life: 0.14 + Math.random() * 0.16,
+        size: 4 + Math.random() * 7,
         color: Math.random() < 0.4 ? 0xfff2c8 : color,
         glow: true,
+        grow: -8,
+      });
+    }
+  }
+
+  impact(pos: Vec2, normal: Vec2, strength: number) {
+    const severity = Math.max(0.4, Math.min(3.5, strength));
+    const tangent = { x: -normal.y, y: normal.x };
+    this.push({ pos, vel: { x: 0, y: 0 }, life: 0.22, size: 8 + severity * 6, color: 0xfff2c8, ring: true });
+    for (let i = 0; i < 10 + severity * 10; i++) {
+      const alongSurface = V.scale(tangent, (Math.random() - 0.5) * (90 + severity * 60));
+      const away = V.scale(normal, 30 + Math.random() * (80 + severity * 35));
+      this.push({
+        pos,
+        vel: V.add(alongSurface, away),
+        life: 0.2 + Math.random() * 0.35,
+        size: 2.2 + Math.random() * (3.5 + severity),
+        color: pickColor(FIRE_COLORS),
+        glow: true,
+        grow: -5,
       });
     }
   }

@@ -14,6 +14,14 @@ import { loadLog, saveLog, GameLog } from "../storage";
 
 const WEAPON_KINDS: WeaponSpec["kind"][] = ["cannon", "laser", "missile"];
 
+interface MuzzleKick {
+  pos: Vec2;
+  dir: Vec2;
+  life: number;
+  maxLife: number;
+  color: number;
+}
+
 export class FlightScene {
   app: Application;
   layer = new Container();
@@ -46,14 +54,26 @@ export class FlightScene {
   private stageEdge = false;
   private firing = false;
   private aimScreen: Vec2 = { x: 0, y: 0 };
+  private aimScreenSmooth: Vec2 = { x: 0, y: 0 };
   private weaponGroup = 0;
   private mapMode = false;
   private warp = 1;
   private fireCooldown = new Map<string, number>();
   private clock = 0;
+  private steerInput = 0;
   private shake = 0;
   private shakeVel: Vec2 = { x: 0, y: 0 };
   private impactPause = 0;
+  private cameraLead: Vec2 = { x: 0, y: 0 };
+  private craftRecoil = 0;
+  private recoilDir: Vec2 = { x: 0, y: 1 };
+  private muzzleKicks: MuzzleKick[] = [];
+  private transitionTimer = 0;
+  private transitionDuration = 1;
+  private displayThrottle = 0;
+  private displayFuelPct = 0;
+  private displaySpeed = 0;
+  private scorePulse = 0;
   private score = 0;
   private combo = 1;
   private comboTimer = 0;
@@ -71,6 +91,7 @@ export class FlightScene {
   private toastEl!: HTMLDivElement;
   private helpEl!: HTMLDivElement;
   private mapBadgeEl!: HTMLDivElement;
+  private transitionEl!: HTMLDivElement;
   private gNav = new Graphics();
   private gFlame = new Graphics();
   private stars: Vec2[] = [];
@@ -83,7 +104,7 @@ export class FlightScene {
     this.cam.zoom = 8;
     this.buildDom();
     this.bindEvents();
-    if (import.meta.env.DEV) (window as unknown as { __flight: FlightScene }).__flight = this;
+    if (import.meta.env.DEV) Object.assign(window, { __flight: this });
   }
 
   // ---------------- lifecycle ----------------
@@ -106,6 +127,7 @@ export class FlightScene {
       const severity = Math.min(1, speed / 70 + destroyedParts * 0.06);
       this.impactPause = Math.max(this.impactPause, 0.035 + severity * 0.08);
       this.kickCamera(10 + severity * 22);
+      this.showTransition("IMPACT", 0.75);
     };
     this.milestones.clear();
     this.world = new World();
@@ -121,8 +143,17 @@ export class FlightScene {
     this.lastCrashToast = -999;
     this.hudTimer = 1;
     this.impactPause = 0;
+    this.steerInput = 0;
     this.shake = 0;
     this.shakeVel = { x: 0, y: 0 };
+    this.cameraLead = { x: 0, y: 0 };
+    this.craftRecoil = 0;
+    this.recoilDir = { x: 0, y: 1 };
+    this.muzzleKicks = [];
+    this.displayThrottle = 0;
+    this.displayFuelPct = 0;
+    this.displaySpeed = 0;
+    this.scorePulse = 0;
 
     const v = assembleVessel(design);
     this.player = v;
@@ -139,8 +170,11 @@ export class FlightScene {
     v.angVel = 0;
     this.cam.center = { ...v.pos };
     this.cam.zoom = 10;
+    this.aimScreen = { x: this.cam.screenW / 2, y: this.cam.screenH / 2 };
+    this.aimScreenSmooth = { ...this.aimScreen };
     this.lastBodyId = "terra";
     this.toast("🚀 Cleared for launch. Throttle up with W!");
+    this.showTransition("LAUNCH", 0.9);
   }
 
   restart() {
@@ -169,6 +203,10 @@ export class FlightScene {
     // (resolution-scaled). The stage and mouse coords are logical, so the camera
     // must use logical size or everything mis-centers on HiDPI/Retina displays.
     this.cam.resize(this.app.screen.width, this.app.screen.height);
+    if (this.aimScreen.x === 0 && this.aimScreen.y === 0) {
+      this.aimScreen = { x: this.cam.screenW / 2, y: this.cam.screenH / 2 };
+      this.aimScreenSmooth = { ...this.aimScreen };
+    }
     this.rebuildStars();
   }
 
@@ -223,7 +261,7 @@ export class FlightScene {
   }
 
   private cycleSas() {
-    const order = ["off", "prograde", "retrograde", "hold"] as const;
+    const order: Array<"off" | "prograde" | "retrograde" | "hold"> = ["off", "prograde", "retrograde", "hold"];
     this.sas = order[(order.indexOf(this.sas) + 1) % order.length];
     this.toast(`SAS: ${this.sas === "off" ? "off" : this.sas}`);
   }
@@ -253,7 +291,8 @@ export class FlightScene {
     this.combo = this.comboTimer > 0 ? Math.min(8, this.combo + 1) : 1;
     this.comboTimer = 3.5; // window to keep the combo going
     this.score += points * this.combo;
-    this.shake = Math.min(16, this.shake + 1.5);
+    this.scorePulse = 1;
+    this.kickCamera(1.8);
     if (this.combo >= 3) this.toast(`💥 ${this.combo}× combo!`);
     void pos;
   }
@@ -287,6 +326,7 @@ export class FlightScene {
   private toggleMap() {
     this.mapMode = !this.mapMode;
     this.mapBadgeEl.style.display = this.layer.visible && this.mapMode ? "block" : "none";
+    this.showTransition(this.mapMode ? "MAP" : "FLIGHT", 0.42);
     if (this.mapMode) {
       // frame the craft's orbit around its dominant body so you can steer & watch it
       const body = this.player ? this.world.dominantBody(this.player.pos) : this.world.get("terra");
@@ -305,6 +345,7 @@ export class FlightScene {
   // ---------------- update ----------------
   update(frameDt: number) {
     if (!this.layer.visible || !this.player) return;
+    this.updateMotion(frameDt);
     if (this.impactPause > 0) {
       const used = Math.min(frameDt, this.impactPause);
       this.impactPause -= used;
@@ -314,15 +355,17 @@ export class FlightScene {
       return;
     }
     // throttle from held keys
-    if (this.keys.has("w")) this.throttle = Math.min(1, this.throttle + frameDt * 0.8);
-    if (this.keys.has("s")) this.throttle = Math.max(0, this.throttle - frameDt * 0.8);
+    if (this.keys.has("w")) this.throttle = Math.min(1, this.throttle + frameDt * 1.15);
+    if (this.keys.has("s")) this.throttle = Math.max(0, this.throttle - frameDt * 1.35);
     if (this.keys.has("shift")) this.throttle = 1;
     if (this.keys.has("control")) this.throttle = 0;
-    let rotate = (this.keys.has("a") ? 1 : 0) - (this.keys.has("d") ? 1 : 0);
-    if (rotate === 0) {
+    const manualRotate = (this.keys.has("a") ? 1 : 0) - (this.keys.has("d") ? 1 : 0);
+    let rotate = manualRotate;
+    if (manualRotate === 0) {
       const sasInput = this.sasRotate(); // SAS holds attitude when not steering by hand
       if (sasInput !== null) rotate = sasInput;
     }
+    this.steerInput += (rotate - this.steerInput) * smoothFactor(frameDt, manualRotate === 0 ? 9 : 16);
 
     // physics substepping (also drives time warp)
     const subDt = 1 / 120;
@@ -337,7 +380,7 @@ export class FlightScene {
       for (const v of this.vessels) {
         const input: VesselInput | null =
           v === this.player
-            ? { rotate, throttleTarget: this.throttle, rcs: this.rcs, stage: this.stageEdge && i === 0 }
+            ? { rotate: this.steerInput, throttleTarget: this.throttle, rcs: this.rcs, stage: this.stageEdge && i === 0 }
             : null;
         const spawned = v.update(dt, this.world, input, this.fx);
         newDebris.push(...spawned);
@@ -351,7 +394,7 @@ export class FlightScene {
     // The world moves at orbital speed, so screen aim must be converted using
     // the current camera center. If firing reads last frame's camera, the aim
     // vector can skew or even appear vertically mirrored.
-    this.followCamera();
+    this.followCamera(frameDt);
 
     // weapons firing (mouse/F), respects per-part cooldown
     if (this.firing && !this.mapMode) this.fireWeapons();
@@ -372,6 +415,11 @@ export class FlightScene {
     }
 
     this.decayShake(frameDt);
+    this.craftRecoil *= Math.exp(-frameDt * 9);
+    this.scorePulse = Math.max(0, this.scorePulse - frameDt * 3.5);
+    this.muzzleKicks = this.muzzleKicks
+      .map((kick) => ({ ...kick, life: kick.life - frameDt }))
+      .filter((kick) => kick.life > 0);
     if (this.comboTimer > 0) {
       this.comboTimer -= frameDt;
       if (this.comboTimer <= 0) this.combo = 1;
@@ -399,14 +447,27 @@ export class FlightScene {
     this.shakeVel = V.scale(this.shakeVel, Math.exp(-dt * 7.5));
   }
 
-  private followCamera() {
+  private updateMotion(dt: number) {
+    this.aimScreenSmooth = smoothVec(this.aimScreenSmooth, this.aimScreen, smoothFactor(dt, this.firing ? 24 : 14));
+    if (this.transitionTimer > 0) {
+      this.transitionTimer = Math.max(0, this.transitionTimer - dt);
+      this.updateTransition();
+    }
+  }
+
+  private followCamera(dt: number) {
     if (!this.player) return;
-    // Hard-follow the craft. The whole world moves at orbital speed (~8.8 km/s),
-    // so smoothing on absolute position can't keep up and the craft flies off-screen.
     if (!this.mapMode) {
-      this.cam.center = { ...this.player.pos };
+      const body = this.world.dominantBody(this.player.pos);
+      const relVel = V.sub(this.player.vel, body.vel);
+      const speed = V.len(relVel);
+      const leadDistance = Math.min(900, Math.max(0, speed * 0.38));
+      const targetLead = speed > 1 && !this.player.landed ? V.scale(V.norm(relVel), leadDistance) : { x: 0, y: 0 };
+      this.cameraLead = smoothVec(this.cameraLead, targetLead, smoothFactor(dt, 2.8));
+      this.cam.center = V.add(this.player.pos, this.cameraLead);
     } else {
       // Keep the orbit framed: follow the dominant body as it drifts through space.
+      this.cameraLead = { x: 0, y: 0 };
       this.cam.center = { ...this.world.dominantBody(this.player.pos).pos };
     }
   }
@@ -416,7 +477,7 @@ export class FlightScene {
     const kinds = this.availableWeaponKinds();
     if (kinds.length === 0) return;
     const kind = kinds[this.weaponGroup % kinds.length];
-    const aim = this.cam.screenToWorld(this.aimScreen);
+    const aim = this.cam.screenToWorld(this.aimScreenSmooth);
     for (const p of this.player.aliveParts()) {
       const spec = p.def.weapon;
       if (!spec || spec.kind !== kind) continue;
@@ -431,11 +492,22 @@ export class FlightScene {
       const rangedAim = V.add(origin, V.scale(dir, spec.range));
       if (spec.kind === "laser") {
         this.combat.fireLaser(origin, dir, spec, this.player.id, this.fx, this.world, this.vessels, rangedAim);
+        this.craftRecoil = Math.min(1.5, this.craftRecoil + 0.018);
+        this.recoilDir = dir;
       } else {
         this.combat.fire(origin, dir, spec, this.player.vel, this.player.id, this.fx, rangedAim, this.world);
         this.fx.flash(origin, dir, spec.kind === "cannon" ? 0xffd27f : 0xff8a3d);
-        if (spec.kind === "cannon") { this.audio.cannon(); this.shake = Math.min(16, this.shake + 1.4); }
-        else { this.audio.missile(); this.shake = Math.min(16, this.shake + 2.2); }
+        this.muzzleKicks.push({
+          pos: origin,
+          dir,
+          life: spec.kind === "cannon" ? 0.16 : 0.26,
+          maxLife: spec.kind === "cannon" ? 0.16 : 0.26,
+          color: spec.kind === "cannon" ? 0xffd27f : 0xff8a3d,
+        });
+        this.craftRecoil = Math.min(2.4, this.craftRecoil + (spec.kind === "cannon" ? 0.45 : 0.7));
+        this.recoilDir = dir;
+        if (spec.kind === "cannon") { this.audio.cannon(); this.kickCamera(1.5); }
+        else { this.audio.missile(); this.kickCamera(2.4); }
       }
     }
   }
@@ -753,7 +825,9 @@ export class FlightScene {
         const ns = this.cam.worldToScreen(nozzle);
         const ds = { x: down.x, y: -down.y }; // screen-space exhaust dir
         const perp = { x: -ds.y, y: ds.x };
-        const flick = 0.75 + Math.random() * 0.4;
+        const flick = 0.88
+          + Math.sin(this.clock * 34 + p.lx * 5.3 + p.ly * 2.7) * 0.1
+          + Math.sin(this.clock * 57 + p.ly * 7.1) * 0.06;
         const baseW = p.def.width * 0.42 * k;
         const len = (1.3 + p.flame * 2.6) * p.def.width * k * flick;
         // layered cones: outer red -> orange -> yellow core
@@ -790,9 +864,11 @@ export class FlightScene {
         }
         const w = v.partWorld(p);
         const s = this.cam.worldToScreen(w);
-        sp.position.set(s.x, s.y);
+        const visual = v === this.player ? this.partVisualOffset(v, p) : { x: 0, y: 0 };
+        sp.position.set(s.x + visual.x, s.y + visual.y);
         sp.rotation = -v.angle;
-        sp.scale.set(p.flip ? -k : k, k);
+        const squash = v === this.player ? this.partVisualScale(p) : 1;
+        sp.scale.set(p.flip ? -k * squash : k * squash, k * (2 - squash));
         sp.visible = true;
         used.add(p.uid);
 
@@ -804,9 +880,9 @@ export class FlightScene {
             this.vesselsLayer.addChild(fs);
             this.fairingSprites.set(p.uid, fs);
           }
-          fs.position.set(s.x, s.y);
+          fs.position.set(s.x + visual.x, s.y + visual.y);
           fs.rotation = -v.angle;
-          fs.scale.set(p.flip ? -k : k, k);
+          fs.scale.set(p.flip ? -k * squash : k * squash, k * (2 - squash));
           fs.visible = true;
           usedFairings.add(p.uid);
         }
@@ -824,6 +900,24 @@ export class FlightScene {
         this.fairingSprites.delete(uid);
       }
     }
+  }
+
+  private partVisualOffset(v: Vessel, p: { lx: number; ly: number; flame: number }): Vec2 {
+    const up = v.upDir();
+    const upScreen = { x: up.x, y: -up.y };
+    const sideScreen = { x: upScreen.y, y: -upScreen.x };
+    const thrustShake = Math.min(2.8, p.flame * 2.5);
+    const wobble = Math.sin(this.clock * 28 + p.lx * 1.9 + p.ly * 3.1) * thrustShake;
+    const recoil = this.craftRecoil;
+    return {
+      x: sideScreen.x * wobble - this.recoilDir.x * recoil * 2.2,
+      y: sideScreen.y * wobble + this.recoilDir.y * recoil * 2.2,
+    };
+  }
+
+  private partVisualScale(p: { flame: number }): number {
+    const squash = 1 + Math.sin(this.clock * 38) * p.flame * 0.018 - this.craftRecoil * 0.012;
+    return clamp(squash, 0.96, 1.04);
   }
 
   private drawProjectiles() {
@@ -849,12 +943,30 @@ export class FlightScene {
     for (const b of this.combat.beams) {
       const a = this.cam.worldToScreen(b.a);
       const e = this.cam.worldToScreen(b.b);
+      const alpha = Math.min(1, b.life / b.maxLife);
       g.moveTo(a.x, a.y);
       g.lineTo(e.x, e.y);
-      g.stroke({ color: 0xff3b3b, width: 3, alpha: Math.min(1, b.life / 0.1) });
+      g.stroke({ color: b.hit ? 0xff3b3b : 0xff6868, width: 3 + alpha * 2, alpha: alpha * 0.82 });
       g.moveTo(a.x, a.y);
       g.lineTo(e.x, e.y);
-      g.stroke({ color: 0xffd2d2, width: 1, alpha: Math.min(1, b.life / 0.1) });
+      g.stroke({ color: 0xffd2d2, width: 1, alpha });
+    }
+    for (const kick of this.muzzleKicks) {
+      const s = this.cam.worldToScreen(kick.pos);
+      const alpha = Math.max(0, kick.life / kick.maxLife);
+      const d = { x: kick.dir.x, y: -kick.dir.y };
+      const p = { x: -d.y, y: d.x };
+      const len = 24 + alpha * 14;
+      const width = 8 + alpha * 8;
+      g.poly([
+        s.x + p.x * width,
+        s.y + p.y * width,
+        s.x - p.x * width,
+        s.y - p.y * width,
+        s.x + d.x * len,
+        s.y + d.y * len,
+      ]);
+      g.fill({ color: kick.color, alpha: alpha * 0.72 });
     }
     // enemy bolts (UFO fire)
     for (const b of this.combat.bolts) {
@@ -944,7 +1056,7 @@ export class FlightScene {
       kind === "laser" ? 0xc84b31 : kind === "missile" ? 0x3a7d8c : 0xd98a3d;
 
     const from = this.cam.worldToScreen(this.player.pos);
-    const to = this.aimScreen;
+    const to = this.aimScreenSmooth;
 
     // dotted line from craft to cursor
     const dx = to.x - from.x;
@@ -974,7 +1086,10 @@ export class FlightScene {
     g.poly(circlePoints(to.x, to.y, r, 20));
     g.stroke({ color, width: firing ? 3 : 2, alpha: 0.95 });
     const tick = 6;
-    for (const [tx, ty] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const ticks: Vec2[] = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+    for (const tickDir of ticks) {
+      const tx = tickDir.x;
+      const ty = tickDir.y;
       g.moveTo(to.x + tx * (r - tick), to.y + ty * (r - tick));
       g.lineTo(to.x + tx * (r + tick), to.y + ty * (r + tick));
     }
@@ -1107,11 +1222,17 @@ export class FlightScene {
     this.mapBadgeEl.textContent = "MAP VIEW";
     this.mapBadgeEl.style.display = "none";
     document.body.appendChild(this.mapBadgeEl);
+
+    this.transitionEl = document.createElement("div");
+    this.transitionEl.className = "flight-transition";
+    this.transitionEl.style.opacity = "0";
+    document.body.appendChild(this.transitionEl);
   }
 
   private setDomVisible(v: boolean) {
     this.gridEl.style.display = v ? "grid" : "none";
     this.mapBadgeEl.style.display = v && this.mapMode ? "block" : "none";
+    this.transitionEl.style.display = v ? "grid" : "none";
   }
 
   private bar(label: string, pct: number, color: string): string {
@@ -1134,6 +1255,9 @@ export class FlightScene {
     const fuelPct = this.player.liquidFuelMax > 0
       ? (this.player.liquidFuel / this.player.liquidFuelMax) * 100
       : 0;
+    this.displaySpeed += (speed - this.displaySpeed) * 0.28;
+    this.displayFuelPct += (fuelPct - this.displayFuelPct) * 0.32;
+    this.displayThrottle += (this.throttle - this.displayThrottle) * 0.35;
     const apo = orb.bound && isFinite(orb.apo) ? fmt(orb.apo - body.radius) : "—";
     const peri = isFinite(orb.peri) ? fmt(orb.peri - body.radius) : "—";
     const t = orbitTiming(this.player.pos, this.player.vel, body);
@@ -1144,7 +1268,7 @@ export class FlightScene {
       <h3>🛰 ${body.name}${this.player.landed ? " · landed" : ""}</h3>
       <div class="readout">
         <span>Altitude</span><b>${fmt(alt)}</b>
-        <span>Speed</span><b>${speed.toFixed(0)} m/s</b>
+        <span>Speed</span><b>${this.displaySpeed.toFixed(0)} m/s</b>
         <span>Vertical</span><b>${vSpeed >= 0 ? "▲" : "▼"} ${Math.abs(vSpeed).toFixed(0)} m/s</b>
         <span>Apoapsis</span><b>${apo}${tApo}</b>
         <span>Periapsis</span><b>${peri}${tPeri}</b>
@@ -1154,8 +1278,8 @@ export class FlightScene {
     const nextStage = this.player.nextStageLabel();
     const fuelColor = fuelPct < 15 ? "#c84b31" : "#d98a3d";
     this.gaugesEl.innerHTML =
-      this.bar("Throttle", this.throttle * 100, "#c84b31") +
-      this.bar("Fuel", fuelPct, fuelColor) +
+      this.bar("Throttle", this.displayThrottle * 100, "#c84b31") +
+      this.bar("Fuel", this.displayFuelPct, fuelColor) +
       `<div class="readout" style="margin-top:7px">
         <span>RCS</span><b>${this.rcs ? "on" : "off"}</b>
         <span>Next ⎵</span><b>${nextStage ? escapeHtmlF(nextStage) : "—"}</b>
@@ -1185,12 +1309,13 @@ export class FlightScene {
       })
       .join("");
     const comboStr = this.combo > 1 ? ` <span style="color:#c84b31">${this.combo}×</span>` : "";
+    const scoreClass = this.scorePulse > 0 ? "score-pop" : "";
     const found = this.log.discoveries.length;
     const total = this.world.landmarks.length;
     this.statusEl.innerHTML = `
       <h3>⚙ Status</h3>
       <div class="readout">
-        <span>Score</span><b>${this.score}${comboStr}</b>
+        <span>Score</span><b class="${scoreClass}">${this.score}${comboStr}</b>
         <span>Discoveries</span><b>${found}/${total}</b>
         <span>Warp</span><b>${this.warp}×</b>
       </div>
@@ -1203,7 +1328,10 @@ export class FlightScene {
       el.onclick = () => { this.weaponGroup = Number(el.dataset.wg); };
     });
     this.statusEl.querySelectorAll<HTMLSpanElement>("span[data-sas]").forEach((el) => {
-      el.onclick = () => { this.sas = el.dataset.sas as typeof this.sas; };
+      el.onclick = () => {
+        const mode = parseSasMode(el.dataset.sas);
+        if (mode) this.sas = mode;
+      };
     });
   }
 
@@ -1271,6 +1399,23 @@ export class FlightScene {
     }, 2600);
     setTimeout(() => el.remove(), 3300);
   }
+
+  private showTransition(label: string, duration: number) {
+    this.transitionEl.textContent = label;
+    this.transitionDuration = Math.max(0.01, duration);
+    this.transitionTimer = this.transitionDuration;
+    this.transitionEl.style.display = this.layer.visible ? "grid" : "none";
+    this.updateTransition();
+  }
+
+  private updateTransition() {
+    const t = 1 - this.transitionTimer / this.transitionDuration;
+    const fadeIn = Math.min(1, t / 0.22);
+    const fadeOut = Math.min(1, this.transitionTimer / (this.transitionDuration * 0.55));
+    const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+    this.transitionEl.style.opacity = alpha.toFixed(3);
+    this.transitionEl.style.transform = `scale(${(0.985 + t * 0.035).toFixed(3)})`;
+  }
 }
 
 // ---------------- helpers ----------------
@@ -1287,6 +1432,22 @@ function fmt(m: number): string {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function smoothFactor(dt: number, rate: number): number {
+  return 1 - Math.exp(-Math.max(0, dt) * rate);
+}
+
+function smoothVec(from: Vec2, to: Vec2, factor: number): Vec2 {
+  return {
+    x: from.x + (to.x - from.x) * factor,
+    y: from.y + (to.y - from.y) * factor,
+  };
+}
+
+function parseSasMode(value: string | undefined): "off" | "prograde" | "retrograde" | "hold" | null {
+  if (value === "off" || value === "prograde" || value === "retrograde" || value === "hold") return value;
+  return null;
 }
 
 function fmtTime(s: number): string {
