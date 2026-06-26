@@ -474,7 +474,8 @@ export class FlightScene {
       const body = this.world.dominantBody(this.player.pos);
       const relVel = V.sub(this.player.vel, body.vel);
       const speed = V.len(relVel);
-      const leadDistance = Math.min(900, Math.max(0, speed * 0.38));
+      const maxLeadWorld = 110 / Math.max(0.001, this.cam.zoom);
+      const leadDistance = Math.min(maxLeadWorld, Math.max(0, speed * 0.24));
       const targetLead = speed > 1 && !this.player.landed ? V.scale(V.norm(relVel), leadDistance) : { x: 0, y: 0 };
       this.cameraLead = smoothVec(this.cameraLead, targetLead, smoothFactor(dt, 2.8));
       this.cam.center = V.add(this.player.pos, this.cameraLead);

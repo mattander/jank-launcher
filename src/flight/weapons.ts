@@ -37,6 +37,7 @@ export interface Beam {
   life: number;
   maxLife: number;
   hit: boolean;
+  frameBodyId: string;
 }
 
 export interface Ufo {
@@ -161,7 +162,8 @@ export class Combat {
     const range = Math.min(spec.range, Math.max(60, V.len(V.sub(aim, origin))));
     const hit = this.rayHit(origin, dir, range, world, vessels, ownerId);
     const end = hit ? hit.point : V.add(origin, V.scale(dir, range));
-    this.beams.push({ a: { ...origin }, b: end, life: 0.11, maxLife: 0.11, hit: !!hit });
+    const frameBody = world.dominantBody(origin);
+    this.beams.push({ a: { ...origin }, b: end, life: 0.07, maxLife: 0.07, hit: !!hit, frameBodyId: frameBody.id });
     if (hit) {
       this.applyDamage(hit, spec.damage * 0.05, fx);
       fx.impact?.(hit.point, V.scale(dir, -1), 0.9);
@@ -170,8 +172,15 @@ export class Combat {
   }
 
   update(dt: number, world: World, vessels: Vessel[], fx: Fx) {
-    // beams fade
-    for (const b of this.beams) b.life -= dt;
+    // Laser beams are visual afterimages. Keep them in the local body frame so
+    // they do not smear backward at orbital speed while the camera follows the craft.
+    for (const b of this.beams) {
+      const frameBody = world.get(b.frameBodyId);
+      const drift = V.scale(frameBody.vel, dt);
+      b.a = V.add(b.a, drift);
+      b.b = V.add(b.b, drift);
+      b.life -= dt;
+    }
     this.beams = this.beams.filter((b) => b.life > 0);
 
     // targets drift / bob

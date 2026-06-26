@@ -26,4 +26,29 @@ describe("Combat weapons", () => {
     expect(V.len(V.sub(shot.pos, origin))).toBeGreaterThan(100);
     expect(V.norm(V.sub(shot.pos, origin)).x).toBeGreaterThan(0.8);
   });
+
+  it("keeps laser afterimages in the local body frame", () => {
+    const world = new World();
+    const combat = new Combat();
+    const terra = world.get("terra");
+    const spec: WeaponSpec = { kind: "laser", damage: 60, rate: 1, speed: 0, range: 7000 };
+    const origin = V.add(terra.pos, { x: 0, y: terra.radius + 200 });
+    const dir = V.norm({ x: 1, y: 0.1 });
+    const aim = V.add(origin, V.scale(dir, 1600));
+
+    combat.fireLaser(origin, dir, spec, 1, noFx, world, [], aim);
+    const beam = combat.beams[0];
+    const startRel = V.sub(beam.a, terra.pos);
+
+    const dt = 0.03;
+    world.update(dt);
+    combat.update(dt, world, [], noFx);
+
+    expect(combat.beams.length).toBe(1);
+    const movedBeam = combat.beams[0];
+    const movedTerra = world.get("terra");
+    const movedRel = V.sub(movedBeam.a, movedTerra.pos);
+
+    expect(V.len(V.sub(movedRel, startRel))).toBeLessThan(2);
+  });
 });
